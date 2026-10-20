@@ -18,3 +18,8 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+RUNPOD_API_KEY = "rpa_G2WWKN7ZC7O5V09GLZIDDNK7374133FXURR9EREIqq31h8"
