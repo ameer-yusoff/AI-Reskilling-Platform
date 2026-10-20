@@ -1,5 +1,6 @@
 import { db, profilesTable, plansTable, type SkillRow } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc, isNull, sql, type SQL } from "drizzle-orm";
+import type { Request } from "express";
 import { SDG_TARGETS } from "../data/courses";
 
 export type ProfileRow = typeof profilesTable.$inferSelect;
@@ -29,6 +30,7 @@ export function profileToApi(p: ProfileRow, skills: SkillRow[]) {
     hrdcEligible: p.hrdcEligible,
     cvFileName: p.cvFileName,
     cvUploadedAt: p.cvUploadedAt ? p.cvUploadedAt.toISOString() : null,
+    isGuest: p.ownerUserId === null && p.guestToken !== null,
     cvWordCount: p.cvText ? p.cvText.split(/\s+/).filter(Boolean).length : null,
     skills: p.skills
       .filter((s) => name.has(s.skillId))
@@ -58,4 +60,24 @@ export function planToApi(p: PlanRow) {
     })),
     createdAt: p.createdAt.toISOString(),
   };
+}
+
+
+/** SQL condition restricting profiles to what the caller may see. */
+export function profileScope(req: Request): SQL {
+  const u = req.user;
+  if (u && (u.role === "hr" || u.role === "tvet")) {
+    return u.organization ? eq(profilesTable.organization, u.organization) : sql`false`;
+  }
+  const own = u ? eq(profilesTable.ownerUserId, u.id) : undefined;
+  const guest = req.guestToken ? and(isNull(profilesTable.ownerUserId), eq(profilesTable.guestToken, req.guestToken)) : undefined;
+  if (own && guest) return sql`(${own} OR ${guest})`;
+  return own ?? guest ?? sql`false`;
+}
+
+export function canAccessProfile(req: Request, p: ProfileRow): boolean {
+  const u = req.user;
+  if (u && (u.role === "hr" || u.role === "tvet")) return !!u.organization && p.organization === u.organization;
+  if (u && p.ownerUserId === u.id) return true;
+  return !!req.guestToken && p.ownerUserId === null && p.guestToken === req.guestToken;
 }

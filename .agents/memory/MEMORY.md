@@ -1,0 +1,1 @@
+- [RunPod vLLM quirks](runpod-quirks.md) — served model id is lowercased (mismatch = HTML 502); cold start 3-5 min.

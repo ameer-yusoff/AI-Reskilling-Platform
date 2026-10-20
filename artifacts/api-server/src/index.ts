@@ -2,6 +2,8 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { seedCatalog } from "./lib/seed";
 import { startMarketScheduler } from "./lib/market";
+import { seedDemoAccounts, purgeStaleGuestData } from "./lib/auth";
+import { seedDemoMembers } from "./lib/demo";
 
 const rawPort = process.env["PORT"];
 
@@ -25,6 +27,12 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   seedCatalog()
-    .then(() => startMarketScheduler())
+    .then(() => seedDemoAccounts())
+    .then(() => seedDemoMembers())
+    .then(() => purgeStaleGuestData())
+    .then(() => {
+      startMarketScheduler();
+      setInterval(() => purgeStaleGuestData().catch((err) => logger.error({ err }, "Guest purge failed")), 24 * 3600 * 1000).unref();
+    })
     .catch((err) => logger.error({ err }, "Startup seeding failed"));
 });

@@ -1,3 +1,4 @@
+import { ROLE_TITLE_ZH } from "../data/roles-zh";
 import {
   db,
   skillsTable,
@@ -10,7 +11,7 @@ import {
   type SkillRow,
 } from "@workspace/db";
 
-export type RoleSkillView = { skillId: number; name: string; importance: number };
+export type RoleSkillView = { skillId: number; name: string; category: string; importance: number };
 export type RoleView = {
   id: number;
   socCode: string;
@@ -54,7 +55,7 @@ export async function loadRoles(): Promise<RoleView[]> {
     db.select().from(occupationExposureTable),
     db.select().from(aiUsageTable),
   ]);
-  const skillName = new Map(skills.map((s) => [s.id, s.name]));
+  const skillById = new Map(skills.map((s) => [s.id, s]));
   const exp = new Map(exposure.map((e) => [e.socCode, e.exposure]));
   const usageKey = (geo: string, soc: string) => `${geo}|${soc}`;
   const use = new Map(usage.filter((u) => u.level === 0).map((u) => [usageKey(u.geo, u.socCode), u.pct]));
@@ -63,7 +64,7 @@ export async function loadRoles(): Promise<RoleView[]> {
       ...r,
       skills: rs
         .filter((x) => x.roleId === r.id)
-        .map((x) => ({ skillId: x.skillId, name: skillName.get(x.skillId) ?? "", importance: x.importance }))
+        .map((x) => ({ skillId: x.skillId, name: skillById.get(x.skillId)?.name ?? "", category: skillById.get(x.skillId)?.category ?? "Other", importance: x.importance }))
         .sort((a, b) => b.importance - a.importance),
       aiExposure: exp.get(r.socCode) ?? null,
       aiUsagePctMy: use.get(usageKey("MYS", r.socCode)) ?? null,
@@ -99,6 +100,7 @@ export function roleToApi(r: RoleView) {
     socCode: r.socCode,
     title: r.title,
     titleMs: r.titleMs,
+    titleZh: ROLE_TITLE_ZH[r.title] ?? r.title,
     sector: r.sector,
     riasecCode: r.riasecCode,
     skills: r.skills,

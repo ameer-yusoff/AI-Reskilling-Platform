@@ -3,31 +3,39 @@ import type { SourceRefStored } from "@workspace/db";
 
 export type AgentName = "cv" | "holland" | "profiler" | "fitter" | "planner" | "sdg";
 
+export type Lang = "en" | "ms" | "zh";
+
 const ROLE_DESC: Record<AgentName, { tier: "main" | "light"; task: string }> = {
-  cv: { tier: "light", task: "Ejen CV: ringkaskan pengalaman dan kemahiran yang dibuktikan dalam CV, kenal pasti kemahiran yang mungkin tertinggal daripada pengekstrakan automatik, dan cadangkan 3 penambahbaikan CV yang spesifik." },
-  holland: { tier: "light", task: "Ejen Holland (RIASEC): terangkan kod minat pengguna, maksudnya untuk persekitaran kerja, dan kaitkan dengan peranan dalam senarai padanan. Tegaskan ini alat saringan, bukan diagnosis." },
-  profiler: { tier: "main", task: "Ejen Profiler: bina profil kerjaya yang padu (kekuatan, risiko pendedahan AI pada peranan semasa, kekangan masa dan bajet) dalam 4-6 perenggan pendek." },
-  fitter: { tier: "main", task: "Ejen Fitter: terangkan mengapa 3 peranan teratas sesuai atau tidak, berdasarkan pecahan skor, jurang kemahiran dan isyarat pasaran. Beri satu cadangan peralihan yang paling realistik." },
-  planner: { tier: "main", task: "Ejen Planner: terangkan pelan pembelajaran (Gantt) minggu demi minggu, kenapa susunan ini, kos peribadi, langkah HRD Corp yang perlu disemak dengan majikan, dan kemahiran yang belum diliputi." },
-  sdg: { tier: "light", task: "Ejen SDG: terangkan bagaimana pelan dan peranan sasaran menyumbang kepada sasaran SDG PBB yang disenaraikan, secara konkrit dan tanpa membesar-besarkan." },
+  cv: { tier: "light", task: "the CV Agent. Summarise the experience and skills evidenced in the CV, identify skills the automatic extraction may have missed, and suggest 3 specific CV improvements." },
+  holland: { tier: "light", task: "the Holland (RIASEC) Agent. Explain the user's interest code, what it means for work environments, and link it to roles in the match list. Stress that this is a screening tool, not a diagnosis." },
+  profiler: { tier: "main", task: "the Profiler Agent. Build a concise career profile (strengths, AI exposure of the current role, time and budget constraints) in 4-6 short paragraphs." },
+  fitter: { tier: "main", task: "the Fitter Agent. Explain why the top 3 roles fit or do not fit, based on the score breakdown, skill gaps and market signals. Give one most realistic transition recommendation." },
+  planner: { tier: "main", task: "the Planner Agent. Explain the learning plan (Gantt) week by week: why this order, personal cost, HRD Corp steps to confirm with the employer, and skills not yet covered." },
+  sdg: { tier: "light", task: "the SDG Agent. Explain concretely, without exaggeration, how the plan and target role contribute to the listed UN SDG targets." },
 };
 
 export function agentTier(agent: AgentName) {
   return ROLE_DESC[agent].tier;
 }
 
-const RULES =
-  "Jawab dalam Bahasa Melayu yang jelas. Gunakan HANYA fakta dalam KONTEKS. Jangan reka statistik, nama kursus atau tarikh. Jika maklumat tiada dalam konteks, nyatakan dengan jelas. Gunakan tajuk kecil dan senarai ringkas. Pendedahan AI bermaksud bahagian tugas yang dibantu AI, bukan kebarangkalian kehilangan kerja.";
+const LANG_RULE: Record<Lang, string> = {
+  en: "Write the whole answer in clear, plain English.",
+  ms: "Tulis keseluruhan jawapan dalam Bahasa Melayu yang jelas dan mudah difahami (bukan bahasa Indonesia).",
+  zh: "全文请使用简体中文，语言清晰易懂。专有名词（如课程名称、HRD Corp、SOC 代码）可保留英文原文。",
+};
 
-export function agentPrompt(agent: AgentName, context: Record<string, unknown>) {
-  const system = `Anda ialah ${ROLE_DESC[agent].task} ${RULES}`;
-  const user = `KONTEKS (JSON):\n${JSON.stringify(context, null, 1)}\n\nHasilkan analisis anda sekarang.`;
+const RULES =
+  "Use ONLY facts in the CONTEXT (context keys may be in Malay). Do not invent statistics, course names or dates. If information is missing from the context, say so clearly. Use short subheadings and brief bullet lists in Markdown. Do not use emojis. AI exposure means the share of tasks where AI is observed assisting, not the probability of losing the job.";
+
+export function agentPrompt(agent: AgentName, context: Record<string, unknown>, lang: Lang) {
+  const system = `You are ${ROLE_DESC[agent].task} ${RULES} ${LANG_RULE[lang]}`;
+  const user = `CONTEXT (JSON):\n${JSON.stringify(context, null, 1)}\n\nProduce your analysis now. ${LANG_RULE[lang]}`;
   return { system, user };
 }
 
-export function predictionPrompt(context: Record<string, unknown>, question: string, horizonYears: number) {
-  const system = `Anda ialah Ejen Analyst pasaran buruh Malaysia. ${RULES} Untuk unjuran masa depan: nyatakan andaian, beri senario (asas, optimistik, pesimistik) bagi tempoh ${horizonYears} tahun, nyatakan tahap keyakinan, dan sebut isyarat yang perlu dipantau. Jangan beri angka tepat yang tidak boleh disokong oleh konteks.`;
-  const user = `KONTEKS DATA (JSON):\n${JSON.stringify(context, null, 1)}\n\nSOALAN: ${question}`;
+export function predictionPrompt(context: Record<string, unknown>, question: string, horizonYears: number, lang: Lang) {
+  const system = `You are the Analyst Agent for the Malaysian labour market. ${RULES} For future outlooks: state assumptions, give scenarios (base, optimistic, pessimistic) for a ${horizonYears}-year horizon, state your confidence level, and name the signals to monitor. Do not give precise numbers that the context cannot support. ${LANG_RULE[lang]}`;
+  const user = `DATA CONTEXT (JSON):\n${JSON.stringify(context, null, 1)}\n\nQUESTION: ${question}\n\n${LANG_RULE[lang]}`;
   return { system, user };
 }
 

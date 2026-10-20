@@ -16,6 +16,7 @@ export const marketSourcesTable = pgTable("market_sources", {
   recordCount: integer("record_count").notNull().default(0),
   error: text("error"),
   version: text("version"),
+  detail: text("detail"),
 });
 
 export const labourMonthlyTable = pgTable("labour_monthly", {

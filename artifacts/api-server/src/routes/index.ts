@@ -5,10 +5,12 @@ import catalogRouter from "./catalog";
 import marketRouter from "./market";
 import aiRouter from "./ai";
 import cohortRouter from "./cohort";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
 router.use(profilesRouter);
 router.use(catalogRouter);
 router.use(marketRouter);

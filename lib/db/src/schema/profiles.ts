@@ -34,6 +34,8 @@ export const profilesTable = pgTable("profiles", {
   riasecScores: jsonb("riasec_scores").$type<StoredRiasec | null>(),
   riasecCode: text("riasec_code"),
   targetRoleId: integer("target_role_id"),
+  ownerUserId: integer("owner_user_id"),
+  guestToken: text("guest_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -72,6 +74,7 @@ export const insightsTable = pgTable("agent_insights", {
     .notNull()
     .references(() => profilesTable.id, { onDelete: "cascade" }),
   agent: text("agent").notNull(),
+  lang: text("lang").notNull().default("en"),
   inputHash: text("input_hash").notNull(),
   content: text("content").notNull(),
   sources: jsonb("sources").$type<SourceRefStored[]>().notNull(),
@@ -85,6 +88,9 @@ export const predictionsTable = pgTable("predictions", {
   roleTitle: text("role_title"),
   question: text("question").notNull(),
   horizonYears: integer("horizon_years").notNull(),
+  lang: text("lang").notNull().default("en"),
+  ownerUserId: integer("owner_user_id"),
+  guestToken: text("guest_token"),
   inputHash: text("input_hash").notNull(),
   content: text("content").notNull(),
   sources: jsonb("sources").$type<SourceRefStored[]>().notNull(),

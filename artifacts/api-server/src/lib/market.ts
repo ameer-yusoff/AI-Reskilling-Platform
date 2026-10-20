@@ -8,39 +8,77 @@ import {
 } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { endpointHealth } from "./llm";
+import { loadCourses } from "./catalog";
 
 export type SourceDef = {
   id: string;
   name: string;
+  kind: "dataset" | "catalogue" | "ai_endpoint";
   url: string;
   description: string;
   refreshCadence: string;
+  consumers: string[];
 };
 
 const HF = "https://huggingface.co";
 const HF_DATASET = "Anthropic/EconomicIndex";
 
+// Consumer keys are translated in the frontend.
 export const SOURCES: SourceDef[] = [
   {
     id: "dosm_lfs_month",
-    name: "DOSM Labour Force Survey (bulanan)",
+    name: "DOSM Labour Force Survey (monthly)",
+    kind: "dataset",
     url: "https://data.gov.my/data-catalogue/lfs_month",
-    description: "Kadar pengangguran, kadar penyertaan dan guna tenaga Malaysia, data rasmi Jabatan Perangkaan Malaysia melalui API data.gov.my.",
-    refreshCadence: "Bulanan, disemak setiap 6 jam",
+    description: "Malaysia unemployment rate, participation rate and employment from the Department of Statistics Malaysia via the data.gov.my API.",
+    refreshCadence: "monthly_6h",
+    consumers: ["market", "predictions", "graduate_signals"],
   },
   {
     id: "aei_usage",
-    name: "Anthropic Economic Index: penggunaan AI mengikut pekerjaan",
+    name: "Anthropic Economic Index: AI usage by occupation",
+    kind: "dataset",
     url: `${HF}/datasets/${HF_DATASET}`,
-    description: "Peratus penggunaan Claude yang dipetakan kepada pekerjaan SOC, untuk Malaysia (MYS) dan global. Keluaran terkini dikesan secara automatik.",
-    refreshCadence: "Ikut keluaran baharu, disemak setiap 6 jam",
+    description: "Share of Claude usage mapped to SOC occupations for Malaysia (MYS) and globally. The latest release is detected automatically.",
+    refreshCadence: "release_6h",
+    consumers: ["market", "role_matcher", "predictions", "agent_profiler", "agent_fitter"],
   },
   {
     id: "aei_exposure",
-    name: "Anthropic Economic Index: pendedahan AI yang diperhatikan",
+    name: "Anthropic Economic Index: observed AI exposure",
+    kind: "dataset",
     url: `${HF}/datasets/${HF_DATASET}/tree/main/labor_market_impacts`,
-    description: "Skor pendedahan AI yang diperhatikan (0-1) bagi setiap pekerjaan SOC, berdasarkan penembusan tugas sebenar.",
-    refreshCadence: "Ikut keluaran baharu, disemak setiap 6 jam",
+    description: "Observed AI exposure score (0-1) per SOC occupation, based on actual task coverage.",
+    refreshCadence: "release_6h",
+    consumers: ["role_matcher", "skills_radar", "cohort", "agent_profiler", "agent_fitter"],
+  },
+  {
+    id: "course_catalogue",
+    name: "Course catalogue links",
+    kind: "catalogue",
+    url: "/courses",
+    description: "Curated free, low-cost and HRD Corp-relevant courses. Each course URL is checked to confirm it still opens.",
+    refreshCadence: "links_6h",
+    consumers: ["pathway", "agent_planner", "agent_sdg", "cohort"],
+  },
+  {
+    id: "runpod_main",
+    name: "RunPod main model endpoint",
+    kind: "ai_endpoint",
+    url: "https://www.runpod.io/console/serverless",
+    description: "Serverless vLLM endpoint for the larger model. Health is checked without generating text, so it uses no GPU time.",
+    refreshCadence: "on_refresh",
+    consumers: ["agent_profiler", "agent_fitter", "agent_planner", "predictions"],
+  },
+  {
+    id: "runpod_light",
+    name: "RunPod light model endpoint",
+    kind: "ai_endpoint",
+    url: "https://www.runpod.io/console/serverless",
+    description: "Serverless vLLM endpoint for the smaller model. Falls back to the main endpoint if not configured.",
+    refreshCadence: "on_refresh",
+    consumers: ["agent_cv", "agent_holland", "agent_sdg"],
   },
 ];
 
@@ -54,7 +92,7 @@ async function setSource(id: string, patch: Partial<typeof marketSourcesTable.$i
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: { "User-Agent": "ReskillAI-Malaysia/1.0" } });
+  const res = await fetch(url, { headers: { "User-Agent": "Skilytics/1.0" } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return (await res.json()) as T;
 }
@@ -84,7 +122,7 @@ function parseCsvLine(line: string): string[] {
 }
 
 async function* streamLines(url: string): AsyncGenerator<string> {
-  const res = await fetch(url, { headers: { "User-Agent": "ReskillAI-Malaysia/1.0" } });
+  const res = await fetch(url, { headers: { "User-Agent": "Skilytics/1.0" } });
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`);
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buf = "";
@@ -203,6 +241,51 @@ async function ingestUsage(force: boolean): Promise<void> {
   logger.info({ release, period: latest, rows: rows.length }, "AI usage ingested");
 }
 
+async function checkUrl(url: string): Promise<boolean> {
+  const opts = { redirect: "follow" as const, headers: { "User-Agent": "Mozilla/5.0 (compatible; Skilytics link check)" } };
+  try {
+    const head = await fetch(url, { ...opts, method: "HEAD", signal: AbortSignal.timeout(10_000) });
+    if (head.ok) return true;
+  } catch {
+    // fall through to GET
+  }
+  try {
+    const res = await fetch(url, { ...opts, method: "GET", signal: AbortSignal.timeout(15_000) });
+    await res.body?.cancel();
+    // 403/429 from bot protection still means the page exists.
+    return res.ok || res.status === 403 || res.status === 429;
+  } catch {
+    return false;
+  }
+}
+
+async function checkCourseLinks(): Promise<void> {
+  const courses = await loadCourses();
+  const broken: string[] = [];
+  let i = 0;
+  const worker = async () => {
+    while (i < courses.length) {
+      const c = courses[i++];
+      if (!(await checkUrl(c.url))) broken.push(c.title);
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  const ok = courses.length - broken.length;
+  await setSource("course_catalogue", {
+    status: broken.length > courses.length / 2 ? "error" : "ok",
+    lastFetchedAt: new Date(),
+    dataDate: null,
+    recordCount: courses.length,
+    detail: `${ok}/${courses.length}`,
+    error: broken.length ? `Unreachable: ${broken.join("; ")}` : null,
+  });
+}
+
+async function checkEndpoint(tier: "main" | "light"): Promise<void> {
+  const h = await endpointHealth(tier);
+  await setSource(`runpod_${tier}`, { status: h.status, lastFetchedAt: new Date(), detail: h.detail, error: h.error, recordCount: 0 });
+}
+
 let running: Promise<void> | null = null;
 
 export function refreshAll(force = false): Promise<void> {
@@ -211,6 +294,9 @@ export function refreshAll(force = false): Promise<void> {
     ["dosm_lfs_month", ingestLabour],
     ["aei_exposure", ingestExposure],
     ["aei_usage", () => ingestUsage(force)],
+    ["course_catalogue", checkCourseLinks],
+    ["runpod_main", () => checkEndpoint("main")],
+    ["runpod_light", () => checkEndpoint("light")],
   ];
   running = (async () => {
     for (const [id, fn] of jobs) {
@@ -235,7 +321,8 @@ export async function listSources() {
     const r = byId.get(s.id);
     return {
       ...s,
-      status: (r?.status ?? "pending") as "ok" | "error" | "pending",
+      status: (r?.status ?? "pending") as "ok" | "error" | "pending" | "not_configured",
+      detail: r?.detail ?? null,
       lastFetchedAt: r?.lastFetchedAt ? r.lastFetchedAt.toISOString() : null,
       dataDate: r?.dataDate ?? null,
       recordCount: r?.recordCount ?? 0,
@@ -248,7 +335,7 @@ const SIX_HOURS = 6 * 60 * 60 * 1000;
 
 export function startMarketScheduler(): void {
   void (async () => {
-    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(marketSourcesTable).where(eq(marketSourcesTable.status, "ok"));
+    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(marketSourcesTable).where(sql`${marketSourcesTable.status} in ('ok','not_configured')`);
     if (count < SOURCES.length) await refreshAll();
     else logger.info("Market data present; next check in 6 hours");
   })().catch((err) => logger.error({ err }, "Initial market refresh failed"));

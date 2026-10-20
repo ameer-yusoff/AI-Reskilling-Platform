@@ -3,7 +3,7 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: ReskillAI Malaysia API
+  description: Skilytics API
 servers:
   - url: /api
     description: Base API path
@@ -15,6 +15,7 @@ tags:
   - name: market
   - name: ai
   - name: cohort
+  - name: auth
 paths:
   /healthz:
     get:
@@ -28,6 +29,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      responses:
+        "200":
+          description: Current user or null for guests
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AuthUser"
+                  - type: "null"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: Wrong email or password
+        "403":
+          description: Account belongs to another role
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      description: Registers an individual account and claims any guest work sent with X-Guest-Token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "409":
+          description: Email already registered
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      responses:
+        "204":
+          description: Logged out
+
+  /auth/demo-accounts:
+    get:
+      operationId: listDemoAccounts
+      tags: [auth]
+      responses:
+        "200":
+          description: Demo credentials shown on the login page
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DemoAccount"
 
   /dashboard/summary:
     get:
@@ -255,6 +335,7 @@ paths:
     get:
       operationId: listProfileInsights
       tags: [ai]
+      description: Latest cached insight per agent and language.
       responses:
         "200":
           description: Cached agent insights
@@ -617,6 +698,7 @@ components:
         cvFileName: { type: ["string", "null"] }
         cvUploadedAt: { type: ["string", "null"], format: date-time }
         cvWordCount: { type: ["integer", "null"] }
+        isGuest: { type: boolean, description: "True while the profile is only tied to an anonymous browser token" }
         skills:
           type: array
           items:
@@ -681,11 +763,12 @@ components:
 
     RiasecQuestion:
       type: object
-      required: [id, text, textMs, type]
+      required: [id, text, textMs, textZh, type]
       properties:
         id: { type: integer }
         text: { type: string }
         textMs: { type: string }
+        textZh: { type: string }
         type: { type: string, enum: [R, I, A, S, E, C] }
 
     RiasecAnswer:
@@ -714,20 +797,22 @@ components:
 
     RoleSkill:
       type: object
-      required: [skillId, name, importance]
+      required: [skillId, name, category, importance]
       properties:
         skillId: { type: integer }
         name: { type: string }
+        category: { type: string }
         importance: { type: integer, description: "1 (nice to have) to 3 (core)" }
 
     Role:
       type: object
-      required: [id, socCode, title, titleMs, sector, riasecCode, skills, myColCritical]
+      required: [id, socCode, title, titleMs, titleZh, sector, riasecCode, skills, myColCritical]
       properties:
         id: { type: integer }
         socCode: { type: string }
         title: { type: string }
         titleMs: { type: string }
+        titleZh: { type: string }
         sector: { type: string }
         riasecCode: { type: string }
         skills:
@@ -856,11 +941,13 @@ components:
 
     AgentInsight:
       type: object
-      required: [id, agent, content, sources, model, cached, createdAt]
+      required: [id, agent, lang, content, sources, model, cached, createdAt]
       properties:
         id: { type: integer }
         agent:
           $ref: "#/components/schemas/AgentName"
+        lang:
+          $ref: "#/components/schemas/Lang"
         content: { type: string }
         sources:
           type: array
@@ -878,6 +965,8 @@ components:
           $ref: "#/components/schemas/AgentName"
         roleId: { type: integer }
         refresh: { type: boolean }
+        lang:
+          $ref: "#/components/schemas/Lang"
 
     AiStatus:
       type: object
@@ -893,14 +982,20 @@ components:
 
     MarketSource:
       type: object
-      required: [id, name, url, description, refreshCadence, status, recordCount]
+      required: [id, name, kind, url, description, refreshCadence, status, recordCount, consumers]
       properties:
         id: { type: string }
         name: { type: string }
+        kind: { type: string, enum: [dataset, catalogue, ai_endpoint] }
         url: { type: string }
         description: { type: string }
         refreshCadence: { type: string }
-        status: { type: string, enum: [ok, error, pending] }
+        status: { type: string, enum: [ok, error, pending, not_configured] }
+        consumers:
+          type: array
+          items: { type: string }
+          description: Agent or feature keys that use this source
+        detail: { type: ["string", "null"], description: "Extra status detail, e.g. worker counts for AI endpoints" }
         lastFetchedAt: { type: ["string", "null"], format: date-time }
         dataDate: { type: ["string", "null"] }
         recordCount: { type: integer }
@@ -983,9 +1078,11 @@ components:
 
     Prediction:
       type: object
-      required: [id, question, horizonYears, content, sources, model, cached, createdAt]
+      required: [id, question, horizonYears, lang, content, sources, model, cached, createdAt]
       properties:
         id: { type: integer }
+        lang:
+          $ref: "#/components/schemas/Lang"
         roleId: { type: ["integer", "null"] }
         roleTitle: { type: ["string", "null"] }
         question: { type: string }
@@ -1006,6 +1103,8 @@ components:
         roleId: { type: integer }
         question: { type: string, minLength: 3 }
         horizonYears: { type: integer, minimum: 1, maximum: 10 }
+        lang:
+          $ref: "#/components/schemas/Lang"
 
     CountItem:
       type: object
@@ -1028,10 +1127,12 @@ components:
         topMatchScore: { type: ["number", "null"] }
         currentRoleExposure: { type: ["number", "null"] }
         hasPlan: { type: boolean }
+        skillCount: { type: integer }
+        hrdcEligible: { type: boolean }
 
     CohortSummary:
       type: object
-      required: [profileCount, segmentCounts, topGaps, riasecDistribution, members]
+      required: [profileCount, segmentCounts, topGaps, riasecDistribution, roleFitDistribution, gapCourses, members]
       properties:
         organization: { type: ["string", "null"] }
         profileCount: { type: integer }
@@ -1049,6 +1150,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CountItem"
+        roleFitDistribution:
+          type: array
+          description: Count of members by their top-matching role
+          items:
+            $ref: "#/components/schemas/CountItem"
+        gapCourses:
+          type: array
+          description: Courses in the catalogue that cover the most common gaps
+          items:
+            $ref: "#/components/schemas/GapCourses"
         members:
           type: array
           items:
@@ -1084,3 +1195,84 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ActivityItem"
+
+    Lang:
+      type: string
+      enum: [en, ms, zh]
+
+    UserRole:
+      type: string
+      enum: [individual, hr, tvet]
+
+    AuthUser:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        role:
+          $ref: "#/components/schemas/UserRole"
+        organization: { type: ["string", "null"] }
+
+    AuthSession:
+      type: object
+      required: [token, user, claimedProfiles]
+      properties:
+        token: { type: string }
+        user:
+          $ref: "#/components/schemas/AuthUser"
+        claimedProfiles: { type: integer }
+
+    LoginInput:
+      type: object
+      required: [email, password, role]
+      properties:
+        email: { type: string, minLength: 3 }
+        password: { type: string, minLength: 1 }
+        role:
+          $ref: "#/components/schemas/UserRole"
+
+    RegisterInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string, minLength: 1 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+
+    DemoAccount:
+      type: object
+      required: [role, email, password, organization]
+      properties:
+        role:
+          $ref: "#/components/schemas/UserRole"
+        email: { type: string }
+        password: { type: string }
+        organization: { type: string }
+
+    CourseBrief:
+      type: object
+      required: [id, title, provider, url, costMyr, costType, hrdcStatus, durationHours]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        provider: { type: string }
+        url: { type: string }
+        costMyr: { type: number }
+        costType:
+          $ref: "#/components/schemas/CostType"
+        hrdcStatus:
+          $ref: "#/components/schemas/HrdcStatus"
+        durationHours: { type: number }
+
+    GapCourses:
+      type: object
+      required: [skill, count, courses]
+      properties:
+        skill: { type: string }
+        count: { type: integer }
+        courses:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourseBrief"
