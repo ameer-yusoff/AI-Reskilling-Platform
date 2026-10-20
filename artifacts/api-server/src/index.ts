@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { seedCatalog } from "./lib/seed";
+import { startMarketScheduler } from "./lib/market";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +24,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  seedCatalog()
+    .then(() => startMarketScheduler())
+    .catch((err) => logger.error({ err }, "Startup seeding failed"));
 });

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "ReskillAI Malaysia"
+description = "An AI reskilling and upskilling platform for Malaysian working adults at risk of job displacement, fresh graduates and career switchers, HR teams and employers, and TVET/university career centres. Users upload CVs, take a RIASEC interest assessment, get an evidence-backed profile, role matches with skill gaps, a course plan with Gantt timeline (free, low-cost and HRD Corp claimable courses) linked to SDG targets, and view market intelligence dashboards on AI adoption by industry role with on-demand future outlook predictions powered by RAG agents on RunPod."
+version = "1.0.0"
+id = "artifacts/reskill-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24740
+
+[services.development]
+run = "pnpm --filter @workspace/reskill-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/reskill-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/reskill-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24740"
+BASE_PATH = "/"

@@ -1,6 +1,6 @@
-# [Project name]
+# ReskillAI Malaysia
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+AI reskilling/upskilling workbench for Malaysia: CV + RIASEC profiling, explainable role matching, Gantt reskilling plans (free / low-cost / HRD Corp), SDG mapping, and market intelligence on AI usage by occupation.
 
 ## Run & Operate
 
@@ -22,19 +22,27 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- Frontend: `artifacts/reskill-ai` (React + Vite, routes in `src/App.tsx`, pages in `src/pages`)
+- API: `artifacts/api-server/src/routes/*`, logic in `src/lib/*` (scoring, planner, cv, market ingestion, llm, agents)
+- Seed catalogue (skills, roles with SOC codes, courses, SDG targets, RIASEC items): `artifacts/api-server/src/data/*`, upserted on every API start
+- DB schema: `lib/db/src/schema/*`; API contract: `lib/api-spec/openapi.yaml`
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- GPU only for narratives (6 agents) and on-demand predictions; both cached by input hash. Scoring, matching, planning, charts are deterministic and run without GPU.
+- RunPod Serverless vLLM (OpenAI-compatible). Env: `RUNPOD_API_KEY`, `RUNPOD_LLM_ENDPOINT_ID`, optional `RUNPOD_LIGHT_ENDPOINT_ID`, `RUNPOD_LLM_MODEL`, `RUNPOD_LIGHT_MODEL`. Missing config returns 503 ("Enjin AI belum disambungkan"), never a fake answer.
+- Market data: DOSM `lfs_month` (data.gov.my API) + Anthropic Economic Index (HF; latest `release_*` auto-detected, filtered to MYS/GLOBAL SOC rows; `labor_market_impacts/job_exposure.csv`). Ingested at startup if missing, re-checked every 6h, manual refresh endpoint. Never labelled real-time.
+- Match score weights: skills 40, transferable 15, interest 20, preferences 10, feasibility 15 (frontend meters assume these maxima). marketDemand = MyCOL flag + low AI exposure, separate from fit.
+- HRD Corp status is never "claimable_verified" unless confirmed; local paid training is "check_with_employer". CV files are not stored, only extracted text. No auth yet (add before real CV use).
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Serves four segments: at-risk workers, graduates/career switchers, HR/employers (cohort view by organization), TVET/university career centres. UI in Bahasa Malaysia.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- User writes in Malay; reply in Malay, no emojis.
+- Wants all four target segments covered, accurate up-to-date market data, GPU-saving on-demand predictions.
 
 ## Gotchas
 
