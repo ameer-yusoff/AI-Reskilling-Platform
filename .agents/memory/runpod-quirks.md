@@ -13,3 +13,6 @@ description: Served model id casing and cold-start timing for the RunPod endpoin
 - Active RunPod Serverless workers are billed continuously; flex workers bill through startup, execution, and idle timeout. FlashBoot is enabled by default.
 **Why:** avoiding cold starts has a direct recurring compute cost, and the exact amount depends on the endpoint's selected GPU.
 **How to apply:** check the endpoint GPU and current rate before enabling active workers or extending idle timeout; prefer flex for sporadic traffic.
+- Do not assume a preview HTTP request will survive a full RunPod cold start: a CV upload connection was observed disconnecting after roughly 120 seconds.
+**Why:** cold-start inference can outlast the browser/proxy connection even when the server allows a longer model request.
+**How to apply:** prefer a short job-start request and authenticated status polling for long CV processing; distinguish model progress from an elapsed-time animation.
