@@ -95,6 +95,7 @@ export const ms: Record<DictKey, string> = {
   "err.ai_vision_unsupported": "Model AI yang dikonfigurasikan tidak boleh membaca imej. Sila hubungi pentadbir untuk menyediakan model yang menyokong imej.",
   "err.cv_too_many_pages": "PDF ini mempunyai lebih daripada 50 halaman atau lebih daripada 10 halaman imej sahaja. Sila pecahkan kepada fail yang lebih kecil dan cuba lagi.",
   "err.cv_required": "Muat naik CV dahulu.",
+  "err.cv_no_profile_facts": "CV dapat dibaca, tetapi tiada butiran profil yang dapat disahkan. Cuba imej yang lebih jelas atau masukkan butiran anda sendiri.",
   "err.email_taken": "E-mel itu sudah didaftarkan.", "err.forbidden": "Anda tiada akses untuk ini.",
   "err.guest_token_required": "Sesi tetamu hilang. Muat semula halaman.", "err.invalid_credentials": "E-mel atau kata laluan salah.",
   "err.login_required": "Sila log masuk dahulu.", "err.plan_required": "Bina laluan dahulu.",

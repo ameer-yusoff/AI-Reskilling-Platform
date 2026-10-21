@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadImage } from "@napi-rs/canvas";
 import { extractCvDocument, extractCvText, validateCvImage } from "./cv";
-import { retrieveCv, retrieveReferences, validateExtraction, cvExtractionKey } from "./cv-retrieval";
+import { applySectionEvidence, retrieveCv, retrieveReferences, validateExtraction, cvExtractionKey } from "./cv-retrieval";
 import { imageOnlyCvPdf, malformedPageCvPdf, syntheticCvJpeg, textOnlyCvPdf } from "./test-cv-fixtures";
 import { scoreRiasec } from "./riasec-scoring";
 import { RIASEC_QUESTIONS } from "../data/riasec";
@@ -136,6 +136,45 @@ test("structured extraction rejects unsupported facts even when the model claims
   assert.equal(out.fields.experience, null);
   assert.equal(out.evidence.filter((e) => e.source === "no_evidence").length, 4);
   assert.throws(() => validateExtraction("not-json", cv), /invalid_structured_output/);
+});
+test("CV evidence tolerates OCR line wrapping and case while preserving exact source text", () => {
+  const source = "NAME:\n  Dummy   Worker\nEducation: Diploma in Engineering";
+  const result = validateExtraction(JSON.stringify({
+    name: { value: "dummy worker", quote: "Name: Dummy Worker" },
+    education: { value: "diploma in engineering", quote: "EDUCATION:\tDiploma in Engineering" },
+    experience: { value: "Invented Director", quote: "Director at Example Corp" },
+    currentRole: null, organization: null,
+  }), source);
+  assert.equal(result.fields.name, "Dummy   Worker");
+  assert.equal(result.fields.education, "Diploma in Engineering");
+  assert.equal(result.evidence.find((entry) => entry.field === "name")?.quote, "NAME:\n  Dummy   Worker");
+  assert.equal(result.evidence.find((entry) => entry.field === "education")?.quote, "Education: Diploma in Engineering");
+  assert.equal(result.fields.experience, null);
+});
+test("historical work entries are not presented as the current role", () => {
+  const source = [
+    "EDUCATION",
+    "Bachelor of Real Estate",
+    "WORK EXPERIENCE",
+    "SINE DORBY",
+    "Business Operation Intern",
+    "Oct 2023 - Mar 2024",
+    "Gained experience in managing daily operations.",
+    "SKILLS",
+    "Excel",
+  ].join("\n");
+  const extracted = validateExtraction(JSON.stringify({
+    name: null,
+    currentRole: { value: "Business Operation Intern", quote: "SINE DORBY\nBusiness Operation Intern" },
+    organization: { value: "SINE DORBY", quote: "SINE DORBY\nBusiness Operation Intern" },
+    education: null,
+    experience: null,
+  }), source);
+  const result = applySectionEvidence(extracted, source);
+  assert.equal(result.fields.currentRole, null);
+  assert.equal(result.fields.education, "Bachelor of Real Estate");
+  assert.match(result.fields.experience!, /Oct 2023 - Mar 2024/);
+  assert.equal(result.evidence.find((entry) => entry.field === "currentRole")?.source, "no_evidence");
 });
 test("RIASEC is deterministic, balanced, duplicate-safe and independent of CV text", () => {
   const answers = RIASEC_QUESTIONS.map((q) => ({ questionId: q.id, value: q.type === "S" ? 5 : 3 }));

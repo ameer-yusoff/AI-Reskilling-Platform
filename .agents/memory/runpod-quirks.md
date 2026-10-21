@@ -16,3 +16,6 @@ description: Served model id casing and cold-start timing for the RunPod endpoin
 - Do not assume a preview HTTP request will survive a full RunPod cold start: a CV upload connection was observed disconnecting after roughly 120 seconds.
 **Why:** cold-start inference can outlast the browser/proxy connection even when the server allows a longer model request.
 **How to apply:** prefer a short job-start request and authenticated status polling for long CV processing; distinguish model progress from an elapsed-time animation.
+- A successful multimodal response can transcribe skills while leaving every structured profile fact unsupported; test populated fields and evidence quotes, not HTTP 200 alone.
+**Why:** live dummy-CV tests showed image understanding succeeded but profile extraction missed education and experience until a grounded text pass was added.
+**How to apply:** verify image OCR, structured fields, persisted profile data, and review-form initialization as separate stages.

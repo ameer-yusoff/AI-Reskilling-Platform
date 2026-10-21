@@ -23,7 +23,7 @@ import { agentPrompt, agentTier, hashInput, SOURCE_AEI, type AgentName, type Lan
 import { chat, AiNotConnectedError, AiTimeoutError, AiVisionUnsupportedError } from "../lib/llm";
 import { consumeAiRequest } from "../lib/ai-rate-limit";
 import { SDG_TARGETS } from "../data/courses";
-import { CvAiOutputError, cvExtractionKey, extractCvMultimodalProfile, extractCvProfile, retrieveCv, retrieveReferences } from "../lib/cv-retrieval";
+import { CvAiOutputError, CvProfileFactsMissingError, cvExtractionKey, extractCvMultimodalProfile, extractCvProfile, retrieveCv, retrieveReferences } from "../lib/cv-retrieval";
 
 const router: IRouter = Router();
 const cvRequests = new Map<number, Promise<unknown>>();
@@ -186,12 +186,20 @@ router.post("/profiles/:id/cv", async (req, res) => {
       ? await extractCvMultimodalProfile(pages!, lang)
       : await extractCvProfile(text!, lang);
     const cvModelStageMs = Math.round(performance.now() - cvModelStageStartedAt);
+    const profileEvidenceCount = result.evidence.filter((entry) => entry.source === "user_cv" && entry.value.trim() && entry.quote).length;
+    const usedTextFallback = "usedTextFallback" in result && result.usedTextFallback;
+    if (!profileEvidenceCount) {
+      req.log.warn({ profileId: id, usedTextFallback }, "CV contained no verifiable profile facts");
+      throw new CvProfileFactsMissingError();
+    }
     req.log.info({
       profileId: id,
       documentProcessingMs,
       cvModelStageMs,
       pageCount: pages?.length ?? 0,
       scannedPageCount: images.length,
+      profileEvidenceCount,
+      usedTextFallback,
       endpointTier: result.timing.endpointTier,
       modelResolutionMs: result.timing.modelResolutionMs,
       endpointRequestMs: result.timing.endpointRequestMs,
@@ -204,10 +212,13 @@ router.post("/profiles/:id/cv", async (req, res) => {
     const extracted = extractSkills(cvText, allSkills);
     const manual = p.skills.filter((s) => s.status === "self_reported" && !extracted.some((e) => e.skillId === s.skillId));
     const isOrg = req.user?.role === "hr" || req.user?.role === "tvet";
+    const preserveConfirmedDetails = p.verified;
     const [row] = await db.update(profilesTable).set({
-      name: result.fields.name ?? "", currentRole: result.fields.currentRole,
-      ...(isOrg ? {} : { organization: result.fields.organization }),
-      education: result.fields.education, experience: result.fields.experience,
+      name: result.fields.name ?? p.name,
+      currentRole: result.fields.currentRole ?? (preserveConfirmedDetails ? p.currentRole : null),
+      ...(!isOrg ? { organization: result.fields.organization ?? (preserveConfirmedDetails ? p.organization : null) } : {}),
+      education: result.fields.education ?? (preserveConfirmedDetails ? p.education : null),
+      experience: result.fields.experience ?? (preserveConfirmedDetails ? p.experience : null),
       cvText, cvFileName: body.fileName, cvUploadedAt: new Date(),
       cvEvidence: result.evidence, cvExtractionKey: key, verified: false, onboardingStep: "review",
       skills: [...extracted, ...manual],

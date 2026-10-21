@@ -95,6 +95,7 @@ export const zh: Record<DictKey, string> = {
   "err.ai_vision_unsupported": "当前配置的 AI 模型无法读取图像。请联系管理员配置支持图像的模型。",
   "err.cv_too_many_pages": "该 PDF 超过 50 页，或纯图像页超过 10 页。请拆分为较小的文件后重试。",
   "err.cv_required": "请先上传简历。",
+  "err.cv_no_profile_facts": "已读取简历，但无法核实其中的个人资料。请尝试更清晰的图片，或手动填写资料。",
   "err.email_taken": "该邮箱已注册。", "err.forbidden": "你无权访问此内容。",
   "err.guest_token_required": "访客会话丢失，请刷新页面。", "err.invalid_credentials": "邮箱或密码不正确。",
   "err.login_required": "请先登录。", "err.plan_required": "请先生成路径。",

@@ -188,3 +188,120 @@ test("image and scanned-PDF CV uploads use one vision call, save sourced text, a
     }
   }
 });
+
+test("multimodal uploads fall back to grounded text extraction and reject empty profiles without saving", async () => {
+  const envKeys = ["RUNPOD_API_KEY", "RUNPOD_LLM_ENDPOINT_ID", "RUNPOD_LIGHT_ENDPOINT_ID", "RUNPOD_LLM_MODEL", "RUNPOD_LIGHT_MODEL"] as const;
+  const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  const savedFetch = globalThis.fetch;
+  process.env["RUNPOD_API_KEY"] = "test-only-key";
+  process.env["RUNPOD_LLM_ENDPOINT_ID"] = "test-only-vision-endpoint";
+  delete process.env["RUNPOD_LIGHT_ENDPOINT_ID"];
+  delete process.env["RUNPOD_LLM_MODEL"];
+  delete process.env["RUNPOD_LIGHT_MODEL"];
+
+  const sectionedCvText = [
+    "Name: Kiran Example",
+    "Current role: Data Analyst",
+    "Organization: Sample Research Lab",
+    "EDUCATION",
+    "Diploma in Data Analytics",
+    "EXPERIENCE",
+    "Prepared monthly reports for operations teams.",
+    "SKILLS",
+    "Python, Excel, and SQL.",
+  ].join("\n");
+  const recognized = {
+    imagePages: [{ pageNumber: 1, text: sectionedCvText }],
+    profile: { name: null, currentRole: null, organization: null, education: null, experience: null },
+  };
+  const extracted = {
+    name: { value: "Kiran Example", quote: "Name: Kiran Example" },
+    currentRole: { value: "Data Analyst", quote: "Current role: Data Analyst" },
+    organization: { value: "Sample Research Lab", quote: "Organization: Sample Research Lab" },
+    education: { value: "Diploma in Data Analytics", quote: "Education: Diploma in Data Analytics" },
+    experience: { value: "Prepared monthly reports for operations teams.", quote: "Experience: Prepared monthly reports for operations teams." },
+  };
+  let chatCalls = 0;
+  let fallbackReturnsFacts = true;
+  let omitCurrentRole = false;
+  let exposeSections = true;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/health")) {
+      return new Response(JSON.stringify({ workers: { ready: 1, running: 0 } }), { headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/models")) {
+      return new Response(JSON.stringify({ data: [{ id: "qwen/qwen3.5-27b" }] }), { headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/chat/completions")) {
+      chatCalls++;
+      const payload = JSON.parse(String(init?.body)) as { messages: { role: string; content: unknown }[] };
+      const content = payload.messages[1]?.content;
+      const hasImage = Array.isArray(content) && content.some((part: { type?: string }) => part.type === "image_url");
+      assert.equal(hasImage, chatCalls % 2 === 1);
+      const response = hasImage
+        ? { ...recognized, imagePages: [{ pageNumber: 1, text: exposeSections ? sectionedCvText : syntheticCvText }] }
+        : fallbackReturnsFacts
+          ? { ...extracted, ...(omitCurrentRole ? { currentRole: null } : {}), education: null, experience: null }
+          : { name: null, currentRole: null, organization: null, education: null, experience: null };
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(response) } }] }), { headers: { "Content-Type": "application/json" } });
+    }
+    return savedFetch(input, init);
+  };
+
+  try {
+    const imageBase64 = syntheticCvJpeg().toString("base64");
+    const id = await draft("worker");
+    const success = await request(`/profiles/${id}/cv`, "POST", { fileName: "sample.jpg", contentBase64: imageBase64, consent: true, lang: "en" });
+    assert.equal(success.status, 200);
+    assert.equal(success.body.name, "Kiran Example");
+    assert.equal(success.body.currentRole, "Data Analyst");
+    assert.equal(success.body.education, "Diploma in Data Analytics");
+    assert.equal(success.body.cvEvidence.filter((entry: { source: string }) => entry.source === "user_cv").length, 5);
+    assert.equal(success.body.onboardingStep, "review");
+    const [saved] = await db.select().from(profilesTable).where(eq(profilesTable.id, id));
+    assert.equal(saved.name, "Kiran Example");
+    assert.equal(saved.education, "Diploma in Data Analytics");
+    assert.equal(saved.experience, "Prepared monthly reports for operations teams.");
+    assert.equal(saved.cvEvidence.filter((entry) => entry.source === "user_cv").length, 5);
+    assert.equal(chatCalls, 2);
+
+    omitCurrentRole = true;
+    await db.update(profilesTable).set({ currentRole: "TEST ONLY Unconfirmed old role" }).where(eq(profilesTable.id, id));
+    const replacement = await request(`/profiles/${id}/cv`, "POST", { fileName: "sample.jpg", contentBase64: imageBase64, consent: true, lang: "ms" });
+    assert.equal(replacement.status, 200);
+    assert.equal(replacement.body.currentRole, null);
+    assert.equal(replacement.body.cvEvidence.find((entry: { field: string }) => entry.field === "currentRole")?.source, "no_evidence");
+    assert.equal(chatCalls, 4);
+
+    fallbackReturnsFacts = false;
+    exposeSections = false;
+    const emptyToken = randomUUID().replaceAll("-", "");
+    const emptyProfile = await request("/profiles", "POST", { name: "TEST ONLY Draft", segment: "worker", weeklyHours: 1, budgetMyr: 0 }, { "x-guest-token": emptyToken });
+    assert.equal(emptyProfile.status, 201);
+    const emptyId = emptyProfile.body.id as number;
+    profileIds.push(emptyId);
+    await db.update(profilesTable).set({
+      name: "TEST ONLY Existing Name",
+      currentRole: "TEST ONLY Existing Role",
+      organization: "TEST ONLY Existing Organisation",
+      education: "TEST ONLY Existing Education",
+      experience: "TEST ONLY Existing Experience",
+    }).where(eq(profilesTable.id, emptyId));
+    const empty = await request(`/profiles/${emptyId}/cv`, "POST", { fileName: "sample.jpg", contentBase64: imageBase64, consent: true, lang: "en" }, { "x-guest-token": emptyToken });
+    assert.equal(empty.status, 400);
+    assert.equal(empty.body.error, "cv_no_profile_facts");
+    const [stored] = await db.select().from(profilesTable).where(eq(profilesTable.id, emptyId));
+    assert.equal(stored.name, "TEST ONLY Existing Name");
+    assert.equal(stored.currentRole, "TEST ONLY Existing Role");
+    assert.equal(stored.cvExtractionKey, null);
+    assert.equal(chatCalls, 6);
+  } finally {
+    globalThis.fetch = savedFetch;
+    for (const key of envKeys) {
+      const value = savedEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

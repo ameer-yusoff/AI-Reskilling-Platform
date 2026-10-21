@@ -93,6 +93,7 @@ export const en = {
   "err.ai_vision_unsupported": "The configured AI model cannot read images. Please contact the administrator to configure a vision-capable model.",
   "err.cv_too_many_pages": "This PDF has more than 50 pages or more than 10 image-only pages. Please split it into smaller files and try again.",
   "err.cv_required": "Upload a CV first.",
+  "err.cv_no_profile_facts": "We could read the CV, but could not verify any profile details from it. Try a clearer image or enter your details manually.",
   "err.email_taken": "That email is already registered.", "err.forbidden": "You do not have access to this.",
   "err.guest_token_required": "Guest session missing. Reload the page.", "err.invalid_credentials": "Email or password is incorrect.",
   "err.login_required": "Please log in first.", "err.plan_required": "Build a pathway first.",
