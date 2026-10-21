@@ -5,6 +5,8 @@
  * Skilytics API
  * OpenAPI spec version: 0.1.0
  */
+import type { AiStatusLightStatus } from './aiStatusLightStatus';
+import type { AiStatusMainStatus } from './aiStatusMainStatus';
 
 export interface AiStatus {
   connected: boolean;
@@ -15,6 +17,16 @@ export interface AiStatus {
   lightModel: string | null;
   mainConfigured: boolean;
   lightConfigured: boolean;
+  mainStatus: AiStatusMainStatus;
+  /** @nullable */
+  mainDetail: string | null;
+  /** @nullable */
+  mainError: string | null;
+  lightStatus: AiStatusLightStatus;
+  /** @nullable */
+  lightDetail: string | null;
+  /** @nullable */
+  lightError: string | null;
   /** @nullable */
   message?: string | null;
 }

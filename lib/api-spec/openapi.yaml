@@ -970,7 +970,7 @@ components:
 
     AiStatus:
       type: object
-      required: [connected, provider, mainModel, lightModel, mainConfigured, lightConfigured]
+      required: [connected, provider, mainModel, lightModel, mainConfigured, lightConfigured, mainStatus, mainDetail, mainError, lightStatus, lightDetail, lightError]
       properties:
         connected: { type: boolean }
         provider: { type: string }
@@ -978,6 +978,12 @@ components:
         lightModel: { type: ["string", "null"] }
         mainConfigured: { type: boolean }
         lightConfigured: { type: boolean }
+        mainStatus: { type: string, enum: [ok, error, not_configured] }
+        mainDetail: { type: ["string", "null"] }
+        mainError: { type: ["string", "null"] }
+        lightStatus: { type: string, enum: [ok, error, not_configured] }
+        lightDetail: { type: ["string", "null"] }
+        lightError: { type: ["string", "null"] }
         message: { type: ["string", "null"] }
 
     MarketSource:

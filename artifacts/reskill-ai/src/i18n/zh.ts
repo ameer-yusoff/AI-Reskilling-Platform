@@ -185,6 +185,7 @@ export const zh: Record<DictKey, string> = {
   "skills.emptyTitle": "暂无技能", "skills.meta": "确认你能证明的技能。", "skills.remove": "移除 {name}",
   "skills.title": "技能（{n}）", "skills.updated": "技能已更新",
   "sources.aiConfigured": "已配置", "sources.aiConn": "连接", "sources.aiNotConfigured": "未配置",
+  "sources.aiReady": "就绪", "sources.aiUnavailable": "不可用", "sources.aiVerified": "模型已验证",
   "sources.aiTitle": "AI 服务", "sources.coldStart": "模型服务器闲置时会休眠，首次请求可能较慢。",
   "sources.detail": "详情", "sources.empty": "暂无来源", "sources.lastError": "最近错误",
   "sources.lastFetched": "最近获取", "sources.lightModel": "轻量模型", "sources.mainModel": "主模型",

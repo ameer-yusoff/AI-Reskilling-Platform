@@ -185,6 +185,7 @@ export const ms: Record<DictKey, string> = {
   "skills.emptyTitle": "Belum ada kemahiran", "skills.meta": "Sahkan kemahiran yang boleh anda buktikan.", "skills.remove": "Buang {name}",
   "skills.title": "Kemahiran ({n})", "skills.updated": "Kemahiran dikemas kini",
   "sources.aiConfigured": "Dikonfigurasi", "sources.aiConn": "Sambungan", "sources.aiNotConfigured": "Belum dikonfigurasi",
+  "sources.aiReady": "Sedia", "sources.aiUnavailable": "Tidak tersedia", "sources.aiVerified": "Model disahkan",
   "sources.aiTitle": "Perkhidmatan AI", "sources.coldStart": "Pelayan model tidur apabila tidak aktif; permintaan pertama mungkin perlahan.",
   "sources.detail": "Butiran", "sources.empty": "Tiada sumber", "sources.lastError": "Ralat terakhir",
   "sources.lastFetched": "Terakhir diambil", "sources.lightModel": "Model ringan", "sources.mainModel": "Model utama",

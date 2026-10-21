@@ -587,6 +587,12 @@ export const GetAiStatusResponse = zod.object({
   "lightModel": zod.string().nullable(),
   "mainConfigured": zod.boolean(),
   "lightConfigured": zod.boolean(),
+  "mainStatus": zod.enum(['ok', 'error', 'not_configured']),
+  "mainDetail": zod.string().nullable(),
+  "mainError": zod.string().nullable(),
+  "lightStatus": zod.enum(['ok', 'error', 'not_configured']),
+  "lightDetail": zod.string().nullable(),
+  "lightError": zod.string().nullable(),
   "message": zod.string().nullish()
 })
 

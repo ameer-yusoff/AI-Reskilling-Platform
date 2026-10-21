@@ -26,30 +26,44 @@ function cfg() {
   };
 }
 
-export function aiStatus() {
+export async function aiStatus() {
   const c = cfg();
   const mainConfigured = !!(c.apiKey && c.mainId);
   const lightConfigured = !!(c.apiKey && c.lightId);
+  const [mainHealth, lightHealth] = await Promise.all([
+    mainConfigured ? endpointHealth("main") : Promise.resolve({ status: "not_configured" as const, detail: null, error: null }),
+    lightConfigured ? endpointHealth("light") : Promise.resolve({ status: "not_configured" as const, detail: null, error: null }),
+  ]);
   return {
-    connected: mainConfigured,
+    connected: mainHealth.status === "ok",
     provider: "RunPod Serverless (vLLM)",
     mainModel: mainConfigured ? c.mainModel : null,
     lightModel: lightConfigured ? c.lightModel : null,
     mainConfigured,
     lightConfigured,
-    message: mainConfigured
-      ? lightConfigured
-        ? "AI engine configured. The light model serves the CV, Holland and SDG agents."
-        : "AI engine configured. No light endpoint set, so every agent uses the main model."
-      : "AI engine not connected. Set RUNPOD_API_KEY and RUNPOD_LLM_ENDPOINT_ID.",
+    mainStatus: mainHealth.status,
+    mainDetail: mainHealth.detail,
+    mainError: mainHealth.error,
+    lightStatus: lightHealth.status,
+    lightDetail: lightHealth.detail,
+    lightError: lightHealth.error,
+    message: !mainConfigured
+      ? "AI engine not connected. Set RUNPOD_API_KEY and RUNPOD_LLM_ENDPOINT_ID."
+      : mainHealth.status !== "ok"
+        ? `Main AI endpoint is unavailable or its served model does not match the configuration: ${mainHealth.error ?? "health check failed"}`
+        : lightConfigured && lightHealth.status !== "ok"
+          ? `Main AI endpoint is ready, but the light endpoint is unavailable or its served model does not match the configuration: ${lightHealth.error ?? "health check failed"}`
+          : lightConfigured
+            ? "AI engine ready. Main and light endpoint models are verified."
+            : "AI engine ready on the main model. No light endpoint set, so every agent uses the main model.",
   };
 }
 
 const servedModel = new Map<string, string>();
 
 /**
- * The served model id must match exactly (RunPod lowercases it, e.g. "qwen/qwen3.5-9b";
- * a mismatch returns a bare 502). Ask the endpoint once; fall back to the configured name.
+ * RunPod may lowercase the served model id. Only use an advertised model that
+ * matches the configured model; silently selecting a different model masks bad configuration.
  */
 async function resolveModel(endpoint: string, configured: string, apiKey: string): Promise<string> {
   const known = servedModel.get(endpoint);
@@ -62,13 +76,15 @@ async function resolveModel(endpoint: string, configured: string, apiKey: string
     if (res.ok) {
       const j = (await res.json()) as { data?: { id: string }[] };
       const ids = j.data?.map((d) => d.id) ?? [];
-      const match = ids.find((id) => id.toLowerCase() === configured.toLowerCase()) ?? ids[0];
+      const match = ids.find((id) => id.toLowerCase() === configured.toLowerCase());
       if (match) {
         servedModel.set(endpoint, match);
         return match;
       }
+      if (ids.length) throw new Error(`Configured model "${configured}" is not served by the endpoint (served: ${ids.join(", ")}).`);
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Configured model ")) throw err;
     // Endpoint cold; use the configured name for now.
   }
   return configured;
@@ -118,22 +134,53 @@ export type EndpointHealth = {
   error: string | null;
 };
 
-/** Lightweight RunPod health probe (no generation, no GPU cost). */
+/** RunPod readiness and model verification probes (no generation, no GPU generation cost). */
 export async function endpointHealth(tier: Tier): Promise<EndpointHealth> {
   const c = cfg();
   const id = tier === "main" ? c.mainId : c.lightId;
   if (!c.apiKey || !id) return { status: "not_configured", detail: null, error: null };
+  const expectedModel = tier === "main" ? c.mainModel : c.lightModel;
   try {
-    const res = await fetch(`https://api.runpod.ai/v2/${id}/health`, {
-      headers: { Authorization: `Bearer ${c.apiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok) return { status: "error", detail: null, error: `HTTP ${res.status}` };
-    const j = (await res.json()) as { workers?: Record<string, number>; jobs?: Record<string, number> };
+    const headers = { Authorization: `Bearer ${c.apiKey}` };
+    const [healthResult, modelsResult] = await Promise.allSettled([
+      fetch(`https://api.runpod.ai/v2/${id}/health`, { headers, signal: AbortSignal.timeout(15_000) }),
+      fetch(`https://api.runpod.ai/v2/${id}/openai/v1/models`, { headers, signal: AbortSignal.timeout(15_000) }),
+    ]);
+    if (healthResult.status === "rejected") {
+      const timedOut = healthResult.reason instanceof Error && (healthResult.reason.name === "TimeoutError" || healthResult.reason.name === "AbortError");
+      return { status: "error", detail: null, error: `RunPod health probe ${timedOut ? "timed out" : "failed"}.` };
+    }
+    const healthRes = healthResult.value;
+    if (!healthRes.ok) return { status: "error", detail: null, error: `Health probe returned HTTP ${healthRes.status}.` };
+    const j = (await healthRes.json()) as { workers?: Record<string, number>; jobs?: Record<string, number> };
     const w = j.workers ?? {};
-    const detail = `model=${tier === "main" ? c.mainModel : c.lightModel}; workers ready=${w["ready"] ?? 0}, running=${w["running"] ?? 0}, idle=${w["idle"] ?? 0}, initializing=${w["initializing"] ?? 0}; jobs queued=${j.jobs?.["inQueue"] ?? 0}`;
+    const workerDetail = `workers ready=${w["ready"] ?? 0}, running=${w["running"] ?? 0}, idle=${w["idle"] ?? 0}, initializing=${w["initializing"] ?? 0}; jobs queued=${j.jobs?.["inQueue"] ?? 0}`;
+    if (modelsResult.status === "rejected") {
+      const timedOut = modelsResult.reason instanceof Error && (modelsResult.reason.name === "TimeoutError" || modelsResult.reason.name === "AbortError");
+      return { status: "error", detail: workerDetail, error: `RunPod model probe ${timedOut ? "timed out" : "failed"}; served model is unverified.` };
+    }
+    const modelsRes = modelsResult.value;
+    if (!modelsRes.ok) return { status: "error", detail: workerDetail, error: `Model probe returned HTTP ${modelsRes.status}.` };
+    const models = (await modelsRes.json()) as { data?: { id: string }[] };
+    const servedModels = models.data?.map((model) => model.id) ?? [];
+    const modelId = servedModels.find((model) => model.toLowerCase() === expectedModel.toLowerCase());
+    if (!modelId) {
+      servedModel.delete(id);
+      return {
+        status: "error",
+        detail: servedModels.length ? `served models=${servedModels.join(", ")}` : null,
+        error: servedModels.length
+          ? `Configured model "${expectedModel}" does not match any served model.`
+          : "The endpoint did not advertise a served model.",
+      };
+    }
+    servedModel.set(id, modelId);
+    const detail = `model=${modelId}; ${workerDetail}`;
     return { status: "ok", detail, error: null };
   } catch (err) {
-    return { status: "error", detail: null, error: err instanceof Error ? err.message : String(err) };
+    const error = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")
+      ? "RunPod health or model response timed out."
+      : "RunPod health or model response failed.";
+    return { status: "error", detail: null, error };
   }
 }

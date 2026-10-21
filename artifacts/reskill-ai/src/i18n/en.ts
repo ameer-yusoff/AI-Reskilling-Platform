@@ -183,6 +183,7 @@ export const en = {
   "skills.emptyTitle": "No skills yet", "skills.meta": "Confirm skills you can back up.", "skills.remove": "Remove {name}",
   "skills.title": "Skills ({n})", "skills.updated": "Skills updated",
   "sources.aiConfigured": "Configured", "sources.aiConn": "Connection", "sources.aiNotConfigured": "Not configured",
+  "sources.aiReady": "Ready", "sources.aiUnavailable": "Unavailable", "sources.aiVerified": "Model verified",
   "sources.aiTitle": "AI service", "sources.coldStart": "Model servers sleep when idle; the first request may be slow.",
   "sources.detail": "Detail", "sources.empty": "No sources", "sources.lastError": "Last error",
   "sources.lastFetched": "Last fetched", "sources.lightModel": "Light model", "sources.mainModel": "Main model",

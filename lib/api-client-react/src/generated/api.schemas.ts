@@ -327,6 +327,24 @@ export interface AgentRunInput {
   lang?: Lang;
 }
 
+export type AiStatusMainStatus = typeof AiStatusMainStatus[keyof typeof AiStatusMainStatus];
+
+
+export const AiStatusMainStatus = {
+  ok: 'ok',
+  error: 'error',
+  not_configured: 'not_configured',
+} as const;
+
+export type AiStatusLightStatus = typeof AiStatusLightStatus[keyof typeof AiStatusLightStatus];
+
+
+export const AiStatusLightStatus = {
+  ok: 'ok',
+  error: 'error',
+  not_configured: 'not_configured',
+} as const;
+
 export interface AiStatus {
   connected: boolean;
   provider: string;
@@ -336,6 +354,16 @@ export interface AiStatus {
   lightModel: string | null;
   mainConfigured: boolean;
   lightConfigured: boolean;
+  mainStatus: AiStatusMainStatus;
+  /** @nullable */
+  mainDetail: string | null;
+  /** @nullable */
+  mainError: string | null;
+  lightStatus: AiStatusLightStatus;
+  /** @nullable */
+  lightDetail: string | null;
+  /** @nullable */
+  lightError: string | null;
   /** @nullable */
   message?: string | null;
 }

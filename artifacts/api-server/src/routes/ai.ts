@@ -9,8 +9,8 @@ import { hashInput, predictionPrompt, SOURCE_AEI, SOURCE_DOSM, type Lang } from 
 
 const router: IRouter = Router();
 
-router.get("/ai/status", (_req, res) => {
-  res.json(aiStatus());
+router.get("/ai/status", async (_req, res) => {
+  res.json(await aiStatus());
 });
 
 function predictionToApi(r: typeof predictionsTable.$inferSelect, cached: boolean) {

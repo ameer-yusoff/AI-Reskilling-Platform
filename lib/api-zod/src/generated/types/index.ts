@@ -11,6 +11,8 @@ export * from './agentInsight';
 export * from './agentName';
 export * from './agentRunInput';
 export * from './aiStatus';
+export * from './aiStatusLightStatus';
+export * from './aiStatusMainStatus';
 export * from './aiUsageGroup';
 export * from './aiUsageGroups';
 export * from './aiUsageRole';
