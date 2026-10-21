@@ -213,6 +213,45 @@ test("accepts the lowercase served model ID and sends it in chat requests", asyn
   assert.equal(chatPayload?.model, "qwen/qwen3.5-27b");
 });
 
+for (const dedicatedLight of [false, true]) {
+  test(`light chat uses the ${dedicatedLight ? "dedicated light endpoint and model when configured" : "main endpoint and model when no light endpoint is configured"}`, async () => {
+    configureRunPod({
+      mainId: "main-endpoint",
+      lightId: dedicatedLight ? "light-endpoint" : undefined,
+      mainModel: "custom/main-model",
+      lightModel: "custom/light-model",
+    });
+    const llm = await loadLlm();
+    const endpoint = dedicatedLight ? "light-endpoint" : "main-endpoint";
+    const model = dedicatedLight ? "custom/light-model" : "custom/main-model";
+    const baseUrl = `https://api.runpod.ai/v2/${endpoint}/openai/v1`;
+    const calls: string[] = [];
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === `${baseUrl}/models`) {
+        return jsonResponse({ data: [{ id: model }] });
+      }
+      if (url === `${baseUrl}/chat/completions`) {
+        assert.equal(init?.method, "POST");
+        const payload = JSON.parse(String(init?.body));
+        assert.equal(payload.model, model);
+        assert.deepEqual(payload.messages, [
+          { role: "system", content: "system prompt" },
+          { role: "user", content: "user prompt" },
+        ]);
+        return jsonResponse({ choices: [{ message: { content: "A light-tier answer." } }] });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+
+    const result = await llm.chat("light", "system prompt", "user prompt");
+
+    assert.deepEqual(result, { content: "A light-tier answer.", model });
+    assert.deepEqual(calls, [`${baseUrl}/models`, `${baseUrl}/chat/completions`]);
+  });
+}
+
 test("shares an identical chat request while it is in flight", async () => {
   configureRunPod({ mainId: "main-endpoint" });
   const llm = await loadLlm();
