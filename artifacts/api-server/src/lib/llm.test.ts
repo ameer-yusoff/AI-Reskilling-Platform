@@ -275,6 +275,36 @@ test("sends the actual image to RunPod through the multimodal chat content shape
   ]);
 });
 
+test("sends multiple scanned PDF pages in one lower-temperature vision request", async () => {
+  configureRunPod({ mainId: "main-endpoint", mainModel: "qwen/qwen3.5-27b" });
+  const llm = await loadLlm();
+  let requestBody: Record<string, any> | undefined;
+  let chatCalls = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/models")) return jsonResponse({ data: [{ id: "qwen/qwen3.5-27b" }] });
+    if (url.endsWith("/chat/completions")) {
+      chatCalls++;
+      requestBody = JSON.parse(String(init?.body));
+      return jsonResponse({ choices: [{ message: { content: '{"imagePages":[],"profile":{}}' } }] });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  await llm.chatWithImages("light", "system prompt", "Read pages 1 and 2.", [
+    { mediaType: "image/jpeg", base64: "cGFnZTE=" },
+    { mediaType: "image/jpeg", base64: "cGFnZTI=" },
+  ]);
+  const content = requestBody?.messages[1]?.content as { type: string; image_url?: { url: string } }[];
+  assert.equal(chatCalls, 1);
+  assert.equal(requestBody?.temperature, 0.1);
+  assert.equal(requestBody?.max_tokens, 6000);
+  assert.deepEqual(content.filter((part) => part.type === "image_url").map((part) => part.image_url?.url), [
+    "data:image/jpeg;base64,cGFnZTE=",
+    "data:image/jpeg;base64,cGFnZTI=",
+  ]);
+});
+
 test("reports a clear error when a RunPod endpoint rejects multimodal image input", async () => {
   configureRunPod({ mainId: "main-endpoint", mainModel: "qwen/qwen3.5-27b" });
   const llm = await loadLlm();

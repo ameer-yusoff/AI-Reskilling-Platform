@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { extractCvText, validateCvImage } from "./cv";
+import { extractCvDocument, extractCvText, validateCvImage } from "./cv";
 import { retrieveCv, retrieveReferences, validateExtraction, cvExtractionKey } from "./cv-retrieval";
+import { imageOnlyCvPdf, syntheticCvJpeg } from "./test-cv-fixtures";
 import { scoreRiasec } from "./riasec-scoring";
 import { RIASEC_QUESTIONS } from "../data/riasec";
 import { csvRows } from "./onet";
@@ -74,6 +75,16 @@ test("image CV validation accepts supported signatures and rejects mismatched or
   assert.throws(() => validateCvImage("cv.webp", png.toString("base64")), /cv_corrupt/);
   assert.throws(() => validateCvImage("cv.png", Buffer.from("not an image").toString("base64")), /cv_corrupt/);
   assert.throws(() => validateCvImage("cv.png", Buffer.alloc(8 * 1024 * 1024 + 1, 1).toString("base64")), /cv_too_large/);
+});
+test("scanned PDF pages are rendered as compact vision-ready JPEGs", async () => {
+  const pdf = imageOnlyCvPdf(syntheticCvJpeg());
+  const document = await extractCvDocument("scanned-cv.pdf", pdf.toString("base64"));
+  assert.ok("pages" in document);
+  const pages = document.pages ?? [];
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0]?.pageNumber, 1);
+  assert.equal(pages[0]?.image?.mediaType, "image/jpeg");
+  assert.ok(Buffer.from(pages[0]!.image!.base64, "base64").byteLength < pdf.byteLength);
 });
 test("retrieval uses only the supplied user's document and sourced relevant references", () => {
   assert.ok(retrieveCv(cv).every((c) => cv.includes(c.content)));

@@ -22,9 +22,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
-RUNPOD_API_KEY = "rpa_G2WWKN7ZC7O5V09GLZIDDNK7374133FXURR9EREIqq31h8"
-RUNPOD_LLM_ENDPOINT_ID = "https://api.runpod.ai/v2/3pvoygmk4mn0ad/run"
-RUNPOD_LIGHT_ENDPOINT_ID = "https://api.runpod.ai/v2/bs50a57qmoqrpp/run"
 
 [nix]
 channel = "stable-25_05"

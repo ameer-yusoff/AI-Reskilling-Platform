@@ -100,18 +100,23 @@ export async function chat(tier: Tier, system: string, user: string): Promise<{ 
 }
 
 export async function chatWithImage(tier: Tier, system: string, user: string, image: ChatImage): Promise<{ content: string; model: string }> {
-  return chatRequest(tier, system, user, image);
+  return chatWithImages(tier, system, user, [image]);
 }
 
-async function chatRequest(tier: Tier, system: string, user: string, image?: ChatImage): Promise<{ content: string; model: string }> {
+export async function chatWithImages(tier: Tier, system: string, user: string, images: ChatImage[]): Promise<{ content: string; model: string }> {
+  if (!images.length) throw new Error("At least one image is required.");
+  return chatRequest(tier, system, user, images);
+}
+
+async function chatRequest(tier: Tier, system: string, user: string, images?: ChatImage[]): Promise<{ content: string; model: string }> {
   const requestKey = createHash("sha256")
     .update(tier).update("\0").update(system).update("\0").update(user).update("\0")
-    .update(image ? `${image.mediaType}\0${createHash("sha256").update(image.base64).digest("hex")}` : "")
+    .update(images?.map((image) => `${image.mediaType}\0${createHash("sha256").update(image.base64).digest("hex")}`).join("\0") ?? "")
     .digest("hex");
   const inFlight = pendingChats.get(requestKey);
   if (inFlight) return inFlight;
 
-  const request = generateChat(tier, system, user, image);
+  const request = generateChat(tier, system, user, images);
   pendingChats.set(requestKey, request);
   try {
     return await request;
@@ -122,7 +127,7 @@ async function chatRequest(tier: Tier, system: string, user: string, image?: Cha
 
 const pendingChats = new Map<string, Promise<{ content: string; model: string }>>();
 
-async function generateChat(tier: Tier, system: string, user: string, image?: ChatImage): Promise<{ content: string; model: string }> {
+async function generateChat(tier: Tier, system: string, user: string, images?: ChatImage[]): Promise<{ content: string; model: string }> {
   const c = cfg();
   if (!c.apiKey || !c.mainId) throw new AiNotConnectedError("AI engine not connected");
   const useLight = tier === "light" && !!c.lightId;
@@ -135,16 +140,19 @@ async function generateChat(tier: Tier, system: string, user: string, image?: Ch
     headers: { Authorization: `Bearer ${c.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
-      temperature: 0.3,
-      max_tokens: 1800,
+      temperature: images ? 0.1 : 0.3,
+      max_tokens: images ? 6000 : 1800,
       messages: [
         { role: "system", content: system },
         {
           role: "user",
-          content: image
+          content: images
             ? [
                 { type: "text", text: user },
-                { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.base64}` } },
+                ...images.map((image) => ({
+                  type: "image_url" as const,
+                  image_url: { url: `data:${image.mediaType};base64,${image.base64}` },
+                })),
               ]
             : user,
         },
@@ -158,7 +166,7 @@ async function generateChat(tier: Tier, system: string, user: string, image?: Ch
     throw err;
   }
   if (!res.ok) {
-    if (image && [400, 415, 422].includes(res.status)) {
+    if (images && [400, 415, 422].includes(res.status)) {
       throw new AiVisionUnsupportedError("The configured RunPod model rejected multimodal image input.");
     }
     throw new Error(`RunPod request failed with HTTP ${res.status}.`);

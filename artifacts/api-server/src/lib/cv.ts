@@ -1,14 +1,27 @@
 import mammoth from "mammoth";
-import { extractText, getDocumentProxy } from "unpdf";
+import { definePDFJSModule, extractText, getDocumentProxy, renderPageAsImage } from "unpdf";
 import type { SkillRow, StoredProfileSkill } from "@workspace/db";
 
 export class CvError extends Error {}
 
 const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_SCANNED_PAGES = 10;
+const MIN_SEARCHABLE_PAGE_CHARS = 40;
+let pdfJsModuleReady: Promise<void> | undefined;
+
+async function ensurePdfJsModule(): Promise<void> {
+  pdfJsModuleReady ??= definePDFJSModule(() => import("pdfjs-dist/legacy/build/pdf.mjs"));
+  await pdfJsModuleReady;
+}
 
 export type CvImageInput = {
   mediaType: "image/png" | "image/jpeg" | "image/webp";
   base64: string;
+};
+export type CvDocumentPage = {
+  pageNumber: number;
+  text: string;
+  image?: CvImageInput;
 };
 
 export function isCvImageFile(fileName: string): boolean {
@@ -46,27 +59,72 @@ export function normalizeCvText(value: string): string {
 }
 
 export async function extractCvText(fileName: string, contentBase64: string): Promise<string> {
+  const document = await extractCvDocument(fileName, contentBase64);
+  if ("pages" in document) throw new CvError("cv_unreadable");
+  return document.text;
+}
+
+export async function extractCvDocument(
+  fileName: string,
+  contentBase64: string,
+): Promise<{ text: string; pages?: never } | { text?: never; pages: CvDocumentPage[] }> {
   const buf = decodeBase64(contentBase64);
   const ext = fileName.toLowerCase().split(".").pop();
-  let text: string;
   if (ext === "pdf") {
+    await ensurePdfJsModule();
     const pdf = await getDocumentProxy(new Uint8Array(buf));
     try {
-      const out = await extractText(pdf, { mergePages: true });
-      text = Array.isArray(out.text) ? out.text.join("\n") : out.text;
+      const out = await extractText(pdf, { mergePages: false });
+      const pageTexts = out.text.map(normalizeCvText);
+      const searchableText = normalizeCvText(pageTexts.join("\n\n"));
+      const scannedPages = pageTexts
+        .map((text, index) => ({ pageNumber: index + 1, text }))
+        .filter((page) => page.text.length < MIN_SEARCHABLE_PAGE_CHARS);
+
+      if (scannedPages.length === 0) {
+        if (searchableText.length < 40 || !/[\p{L}]{2}/u.test(searchableText)) {
+          throw new CvError("cv_unreadable");
+        }
+        return { text: searchableText };
+      }
+
+      if (scannedPages.length > MAX_SCANNED_PAGES) throw new CvError("cv_too_many_pages");
+
+      const canvasImport = () => import("@napi-rs/canvas");
+      const rendered = await Promise.all(scannedPages.map(async ({ pageNumber }) => {
+        const png = Buffer.from(await renderPageAsImage(pdf, pageNumber, {
+          canvasImport,
+          width: 1200,
+        }));
+        const { createCanvas, loadImage } = await canvasImport();
+        const source = await loadImage(png);
+        const canvas = createCanvas(source.width, source.height);
+        const context = canvas.getContext("2d");
+        context.drawImage(source, 0, 0);
+        const jpeg = canvas.toBuffer("image/jpeg", 86);
+        return {
+          pageNumber,
+          image: { mediaType: "image/jpeg" as const, base64: jpeg.toString("base64") },
+        };
+      }));
+      const renderedByPage = new Map(rendered.map((page) => [page.pageNumber, page.image]));
+      const pages = pageTexts.map((text, index) => ({
+        pageNumber: index + 1,
+        text,
+        ...(renderedByPage.has(index + 1) ? { image: renderedByPage.get(index + 1)! } : {}),
+      }));
+      return { pages };
     } finally {
       await pdf.destroy();
     }
-  } else if (ext === "docx") {
-    text = (await mammoth.extractRawText({ buffer: buf })).value;
-  } else if (ext === "txt") {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(buf);
-  } else {
-    throw new CvError("cv_unsupported");
   }
+  let text: string;
+  if (ext === "docx") text = (await mammoth.extractRawText({ buffer: buf })).value;
+  else if (ext === "txt") text = new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  else throw new CvError("cv_unsupported");
   text = normalizeCvText(text);
   if (text.length < 40 || !/[\p{L}]{2}/u.test(text)) throw new CvError("cv_unreadable");
-  return text;
+  return { text };
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");

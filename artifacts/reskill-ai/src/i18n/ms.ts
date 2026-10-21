@@ -93,6 +93,7 @@ export const ms: Record<DictKey, string> = {
   "err.generic": "Ada masalah berlaku.", "err.invalid_input": "Sesetengah medan tidak sah.", "err.not_found": "Tidak dijumpai.",
   "err.server_error": "Ralat pelayan. Sila cuba lagi.", "err.ai_not_connected": "Perkhidmatan AI tidak bersambung buat masa ini.",
   "err.ai_vision_unsupported": "Model AI yang dikonfigurasikan tidak boleh membaca imej. Sila hubungi pentadbir untuk menyediakan model yang menyokong imej.",
+  "err.cv_too_many_pages": "CV imbasan ini mempunyai lebih daripada 10 halaman imej. Sila pecahkan kepada fail yang lebih kecil dan cuba lagi.",
   "err.cv_required": "Muat naik CV dahulu.",
   "err.email_taken": "E-mel itu sudah didaftarkan.", "err.forbidden": "Anda tiada akses untuk ini.",
   "err.guest_token_required": "Sesi tetamu hilang. Muat semula halaman.", "err.invalid_credentials": "E-mel atau kata laluan salah.",

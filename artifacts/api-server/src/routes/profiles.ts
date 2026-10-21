@@ -12,7 +12,7 @@ import {
   RunProfileAgentBody,
 } from "@workspace/api-zod";
 import { loadCourses, loadRoles, loadSkills, roleToApi } from "../lib/catalog";
-import { extractCvText, extractSkills, CvError, isCvImageFile, validateCvImage, type CvImageInput } from "../lib/cv";
+import { extractCvDocument, extractSkills, CvError, isCvImageFile, validateCvImage, type CvDocumentPage } from "../lib/cv";
 import { RIASEC_QUESTIONS } from "../data/riasec";
 import { scoreRiasec } from "../lib/riasec-scoring";
 import { scoreRole } from "../lib/scoring";
@@ -22,7 +22,7 @@ import { agentPrompt, agentTier, hashInput, SOURCE_AEI, type AgentName, type Lan
 import { chat, AiNotConnectedError, AiTimeoutError, AiVisionUnsupportedError } from "../lib/llm";
 import { consumeAiRequest } from "../lib/ai-rate-limit";
 import { SDG_TARGETS } from "../data/courses";
-import { CvAiOutputError, cvExtractionKey, extractCvImageText, extractCvProfile, retrieveCv, retrieveReferences } from "../lib/cv-retrieval";
+import { CvAiOutputError, cvExtractionKey, extractCvMultimodalProfile, extractCvProfile, retrieveCv, retrieveReferences } from "../lib/cv-retrieval";
 
 const router: IRouter = Router();
 const cvRequests = new Map<number, Promise<unknown>>();
@@ -144,10 +144,15 @@ router.post("/profiles/:id/cv", async (req, res) => {
   if (!p) return;
   if (!body.consent) { res.status(400).json({ error: "cv_consent_required" }); return; }
   let text: string | null = null;
-  let image: CvImageInput | undefined;
+  let pages: CvDocumentPage[] | undefined;
   try {
-    if (isCvImageFile(body.fileName)) image = validateCvImage(body.fileName, body.contentBase64);
-    else text = await extractCvText(body.fileName, body.contentBase64);
+    if (isCvImageFile(body.fileName)) {
+      pages = [{ pageNumber: 1, text: "", image: validateCvImage(body.fileName, body.contentBase64) }];
+    } else {
+      const document = await extractCvDocument(body.fileName, body.contentBase64);
+      if ("pages" in document) pages = document.pages;
+      else text = document.text;
+    }
   } catch (err) {
     if (err instanceof CvError) {
       res.status(400).json({ error: err.message });
@@ -158,14 +163,18 @@ router.post("/profiles/:id/cv", async (req, res) => {
     return;
   }
   const lang = body.lang ?? "en";
-  const key = cvExtractionKey(text ?? "", lang, image);
+  const images = pages?.flatMap((page) => page.image ? [page.image] : []) ?? [];
+  const key = cvExtractionKey(text ?? "", lang, images);
   if (p.cvExtractionKey === key) { res.json(profileToApi(p, await loadSkills())); return; }
   if (cvRequests.has(id)) { res.status(409).json({ error: "cv_processing" }); return; }
-  const rate = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!, image ? 2 : 1);
+  const rate = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!, images.length ? 2 : 1);
   if (!rate.allowed) { res.setHeader("Retry-After", String(rate.retryAfterSeconds)); res.status(429).json({ error: "ai_rate_limited", retryAfterSeconds: rate.retryAfterSeconds }); return; }
   const work = (async () => {
-    const cvText = image ? await extractCvImageText(image) : text!;
-    const result = await extractCvProfile(cvText, lang, image);
+    const multimodal = images.length > 0;
+    const result = multimodal
+      ? await extractCvMultimodalProfile(pages!, lang)
+      : await extractCvProfile(text!, lang);
+    const cvText = multimodal ? (result as Awaited<ReturnType<typeof extractCvMultimodalProfile>>).text : text!;
     const allSkills = await loadSkills();
     const extracted = extractSkills(cvText, allSkills);
     const manual = p.skills.filter((s) => s.status === "self_reported" && !extracted.some((e) => e.skillId === s.skillId));

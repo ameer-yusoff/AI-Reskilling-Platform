@@ -93,6 +93,7 @@ export const zh: Record<DictKey, string> = {
   "err.generic": "出现问题。", "err.invalid_input": "部分字段无效。", "err.not_found": "未找到。",
   "err.server_error": "服务器错误，请重试。", "err.ai_not_connected": "AI 服务目前未连接。",
   "err.ai_vision_unsupported": "当前配置的 AI 模型无法读取图像。请联系管理员配置支持图像的模型。",
+  "err.cv_too_many_pages": "这份扫描简历包含超过 10 页图片。请拆分为较小的文件后重试。",
   "err.cv_required": "请先上传简历。",
   "err.email_taken": "该邮箱已注册。", "err.forbidden": "你无权访问此内容。",
   "err.guest_token_required": "访客会话丢失，请刷新页面。", "err.invalid_credentials": "邮箱或密码不正确。",

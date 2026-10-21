@@ -91,6 +91,7 @@ export const en = {
   "err.generic": "Something went wrong.", "err.invalid_input": "Some fields are not valid.", "err.not_found": "Not found.",
   "err.server_error": "Server error. Please try again.", "err.ai_not_connected": "The AI service is not connected right now.",
   "err.ai_vision_unsupported": "The configured AI model cannot read images. Please contact the administrator to configure a vision-capable model.",
+  "err.cv_too_many_pages": "This scanned CV has more than 10 image-only pages. Please split it into smaller files and try again.",
   "err.cv_required": "Upload a CV first.",
   "err.email_taken": "That email is already registered.", "err.forbidden": "You do not have access to this.",
   "err.guest_token_required": "Guest session missing. Reload the page.", "err.invalid_credentials": "Email or password is incorrect.",

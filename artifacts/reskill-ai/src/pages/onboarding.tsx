@@ -335,6 +335,7 @@ function CvStep({ p, scope }: { p: Profile; scope: string }) {
         <div className="mt-1 text-xs text-muted-foreground">{t("ob.cv.formats")}</div>
       </button>
       <input ref={ref} type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) send(f); e.target.value = ""; }} data-testid="input-cv-file" />
+      {up.isPending && <p className="mt-2 text-xs text-muted-foreground">{t("ob.cv.readingHint")}</p>}
       <p className="mt-3 text-xs text-muted-foreground">{t("ob.cv.privacy")}</p>
       {up.isPending && since && <div className="mt-4"><AiWait since={since} /></div>}
       {local && <div className="mt-4"><ErrorBox message={local} /></div>}

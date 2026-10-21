@@ -7,6 +7,7 @@ import { eq, inArray } from "drizzle-orm";
 import app from "../app";
 import { hashPassword, issueToken } from "./auth";
 import { RIASEC_QUESTIONS } from "../data/riasec";
+import { imageOnlyCvPdf, syntheticCvJpeg, syntheticCvText } from "./test-cv-fixtures";
 
 // Integration fixtures are explicitly test data, not a substitute for a RunPod response.
 let server: Server, base: string;
@@ -111,5 +112,78 @@ test("Employee and Educators cannot see each other or individual CV organisation
     assert.equal((await request(`/profiles/${ids[other]}`, "GET", undefined, headers)).status, 404);
     assert.equal((await request(`/profiles/${ids.individual}`, "GET", undefined, headers)).status, 404);
     assert.equal((await request("/cohort/summary", "GET", undefined, headers)).body.profileCount, 1);
+  }
+});
+
+test("image and scanned-PDF CV uploads use one vision call, save sourced text, and discard image bytes", async () => {
+  const envKeys = ["RUNPOD_API_KEY", "RUNPOD_LLM_ENDPOINT_ID", "RUNPOD_LIGHT_ENDPOINT_ID", "RUNPOD_LLM_MODEL", "RUNPOD_LIGHT_MODEL"] as const;
+  const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  const savedFetch = globalThis.fetch;
+  process.env["RUNPOD_API_KEY"] = "test-only-key";
+  process.env["RUNPOD_LLM_ENDPOINT_ID"] = "test-only-vision-endpoint";
+  delete process.env["RUNPOD_LIGHT_ENDPOINT_ID"];
+  delete process.env["RUNPOD_LLM_MODEL"];
+  delete process.env["RUNPOD_LIGHT_MODEL"];
+
+  let chatCalls = 0;
+  const syntheticResponse = {
+    imagePages: [{ pageNumber: 1, text: syntheticCvText }],
+    profile: {
+      name: { value: "Kiran Example", quote: "Name: Kiran Example" },
+      currentRole: { value: "Data Analyst", quote: "Current role: Data Analyst" },
+      organization: { value: "Sample Research Lab", quote: "Organization: Sample Research Lab" },
+      education: { value: "Diploma in Data Analytics", quote: "Education: Diploma in Data Analytics" },
+      experience: { value: "Prepared monthly reports for operations teams.", quote: "Experience: Prepared monthly reports for operations teams." },
+    },
+  };
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/models")) {
+      return new Response(JSON.stringify({ data: [{ id: "qwen/qwen3.5-27b" }] }), { headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/chat/completions")) {
+      chatCalls++;
+      const payload = JSON.parse(String(init?.body)) as { messages: { role: string; content: unknown }[] };
+      const content = payload.messages[1]?.content;
+      assert.ok(Array.isArray(content));
+      assert.equal(content.filter((part: { type?: string }) => part.type === "image_url").length, 1);
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(syntheticResponse) } }] }), { headers: { "Content-Type": "application/json" } });
+    }
+    return savedFetch(input, init);
+  };
+
+  try {
+    const imageBase64 = syntheticCvJpeg().toString("base64");
+    const uploads = [
+      { fileName: "sample.jpg", contentBase64: imageBase64, lang: "en" },
+      { fileName: "sample.jpg", contentBase64: imageBase64, lang: "ms" },
+      { fileName: "sample.jpg", contentBase64: imageBase64, lang: "zh" },
+      { fileName: "scanned.pdf", contentBase64: imageOnlyCvPdf().toString("base64"), lang: "zh" },
+    ];
+    for (const upload of uploads) {
+      const token = randomUUID().replaceAll("-", "");
+      const created = await request("/profiles", "POST", { name: "TEST ONLY Draft", segment: "worker", weeklyHours: 1, budgetMyr: 0 }, { "x-guest-token": token });
+      assert.equal(created.status, 201);
+      const id = created.body.id as number;
+      profileIds.push(id);
+      const result = await request(`/profiles/${id}/cv`, "POST", { ...upload, consent: true }, { "x-guest-token": token });
+      assert.equal(result.status, 200);
+      assert.equal(result.body.name, "Kiran Example");
+      assert.equal(result.body.currentRole, "Data Analyst");
+      assert.ok(result.body.cvEvidence.some((entry: { field: string; quote: string | null; source: string }) =>
+        entry.field === "education" && entry.quote === "Education: Diploma in Data Analytics" && entry.source === "user_cv"));
+      assert.equal(JSON.stringify(result.body).includes(imageBase64), false);
+      const [stored] = await db.select().from(profilesTable).where(eq(profilesTable.id, id));
+      assert.ok(stored.cvText?.includes("Experience: Prepared monthly reports for operations teams."));
+      assert.equal(JSON.stringify(stored).includes(imageBase64), false);
+    }
+    assert.equal(chatCalls, uploads.length);
+  } finally {
+    globalThis.fetch = savedFetch;
+    for (const key of envKeys) {
+      const value = savedEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
