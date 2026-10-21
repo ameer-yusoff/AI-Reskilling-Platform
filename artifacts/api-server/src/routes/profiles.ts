@@ -164,7 +164,10 @@ router.post("/profiles/:id/cv", async (req, res) => {
   }
   const lang = body.lang ?? "en";
   const images = pages?.flatMap((page) => page.image ? [page.image] : []) ?? [];
-  const key = cvExtractionKey(text ?? "", lang, images);
+  // Include every PDF page's extracted text so mixed text/scanned PDFs cannot
+  // reuse a cached extraction from a different document with the same images.
+  const keyText = text ?? pages?.map((page) => `Page ${page.pageNumber}\n${page.text}`).join("\n\n") ?? "";
+  const key = cvExtractionKey(keyText, lang, images);
   if (p.cvExtractionKey === key) { res.json(profileToApi(p, await loadSkills())); return; }
   if (cvRequests.has(id)) { res.status(409).json({ error: "cv_processing" }); return; }
   const rate = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!, images.length ? 2 : 1);

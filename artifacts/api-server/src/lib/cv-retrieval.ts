@@ -147,7 +147,7 @@ export function cvExtractionKey(text: string, lang: Lang, images?: CvImageInput 
       .update(createHash("sha256").update(image.base64).digest("hex"));
   }
   const inputHash = hash.digest("hex");
-  return hashInput("cv-rag-v2", inputHash, lang, process.env.RUNPOD_LIGHT_MODEL, process.env.RUNPOD_LLM_MODEL, process.env.RUNPOD_LIGHT_ENDPOINT_ID, process.env.RUNPOD_LLM_ENDPOINT_ID, SKILL_REFERENCES);
+  return hashInput("cv-rag-v3", inputHash, lang, process.env.RUNPOD_LIGHT_MODEL, process.env.RUNPOD_LLM_MODEL, process.env.RUNPOD_LIGHT_ENDPOINT_ID, process.env.RUNPOD_LLM_ENDPOINT_ID, SKILL_REFERENCES);
 }
 
 export async function extractCvProfile(text: string, lang: Lang) {

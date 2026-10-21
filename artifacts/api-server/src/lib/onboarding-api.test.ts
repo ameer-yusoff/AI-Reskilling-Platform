@@ -154,11 +154,12 @@ test("image and scanned-PDF CV uploads use one vision call, save sourced text, a
 
   try {
     const imageBase64 = syntheticCvJpeg().toString("base64");
+    const scannedPdfBase64 = imageOnlyCvPdf().toString("base64");
     const uploads = [
       { fileName: "sample.jpg", contentBase64: imageBase64, lang: "en" },
       { fileName: "sample.jpg", contentBase64: imageBase64, lang: "ms" },
       { fileName: "sample.jpg", contentBase64: imageBase64, lang: "zh" },
-      { fileName: "scanned.pdf", contentBase64: imageOnlyCvPdf().toString("base64"), lang: "zh" },
+      { fileName: "scanned.pdf", contentBase64: scannedPdfBase64, lang: "zh" },
     ];
     for (const upload of uploads) {
       const token = randomUUID().replaceAll("-", "");
@@ -172,10 +173,10 @@ test("image and scanned-PDF CV uploads use one vision call, save sourced text, a
       assert.equal(result.body.currentRole, "Data Analyst");
       assert.ok(result.body.cvEvidence.some((entry: { field: string; quote: string | null; source: string }) =>
         entry.field === "education" && entry.quote === "Education: Diploma in Data Analytics" && entry.source === "user_cv"));
-      assert.equal(JSON.stringify(result.body).includes(imageBase64), false);
+      assert.equal(JSON.stringify(result.body).includes(upload.contentBase64), false);
       const [stored] = await db.select().from(profilesTable).where(eq(profilesTable.id, id));
       assert.ok(stored.cvText?.includes("Experience: Prepared monthly reports for operations teams."));
-      assert.equal(JSON.stringify(stored).includes(imageBase64), false);
+      assert.equal(JSON.stringify(stored).includes(upload.contentBase64), false);
     }
     assert.equal(chatCalls, uploads.length);
   } finally {

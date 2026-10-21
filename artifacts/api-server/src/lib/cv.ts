@@ -6,6 +6,7 @@ export class CvError extends Error {}
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_SCANNED_PAGES = 10;
+const MAX_PDF_PAGES = 50;
 const MIN_SEARCHABLE_PAGE_CHARS = 40;
 let pdfJsModuleReady: Promise<void> | undefined;
 
@@ -74,6 +75,7 @@ export async function extractCvDocument(
     await ensurePdfJsModule();
     const pdf = await getDocumentProxy(new Uint8Array(buf));
     try {
+      if (pdf.numPages > MAX_PDF_PAGES) throw new CvError("cv_too_many_pages");
       const out = await extractText(pdf, { mergePages: false });
       const pageTexts = out.text.map(normalizeCvText);
       const searchableText = normalizeCvText(pageTexts.join("\n\n"));

@@ -1003,7 +1003,7 @@ export const getUploadCvUrl = (id: number,) => {
 }
 
 /**
- * Upload a CV (PDF, DOCX, TXT, PNG, JPG/JPEG or WEBP as base64). Text documents are parsed locally; image CVs are read by the configured multimodal AI model. The original file is not stored.
+ * Upload a CV (PDF, DOCX, TXT, PNG, JPG/JPEG or WEBP as base64), up to 8 MB. Text documents are parsed locally. PDF pages with fewer than 40 extracted characters are treated as image-only and sent to the configured multimodal AI model for OCR (up to 10 image-only pages and 50 total PDF pages). The original file is processed in memory and is not stored; extracted CV text and evidence citations are saved.
  */
 export const uploadCv = async (id: number,
     cvUpload: CvUpload, options?: Parameters<typeof customFetch>[1]): Promise<Profile> => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { extractCvDocument, extractCvText, validateCvImage } from "./cv";
 import { retrieveCv, retrieveReferences, validateExtraction, cvExtractionKey } from "./cv-retrieval";
-import { imageOnlyCvPdf, syntheticCvJpeg } from "./test-cv-fixtures";
+import { imageOnlyCvPdf, malformedPageCvPdf, syntheticCvJpeg, textOnlyCvPdf } from "./test-cv-fixtures";
 import { scoreRiasec } from "./riasec-scoring";
 import { RIASEC_QUESTIONS } from "../data/riasec";
 import { csvRows } from "./onet";
@@ -34,19 +34,11 @@ test("real DOCX and PDF parsers extract readable text (no AI involved)", async (
     "word/document.xml": `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${cv.trim()}</w:t></w:r></w:p></w:body></w:document>`,
   });
   assert.match(await extractCvText("readable.docx", docx.toString("base64")), /Diploma in Engineering/);
-  const stream = `BT /F1 12 Tf 50 700 Td (${cv.replaceAll("\n", " ")}) Tj ET`;
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
-  ];
-  let pdf = "%PDF-1.4\n"; const offsets = [0];
-  for (let i = 0; i < objects.length; i++) { offsets.push(Buffer.byteLength(pdf)); pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`; }
-  const xref = Buffer.byteLength(pdf);
-  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map((n) => `${String(n).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  assert.match(await extractCvText("readable.pdf", Buffer.from(pdf).toString("base64")), /Diploma in Engineering/);
+  const readablePdf = textOnlyCvPdf(cv);
+  const pdfDocument = await extractCvDocument("readable.pdf", readablePdf.toString("base64"));
+  assert.ok("text" in pdfDocument);
+  assert.match(pdfDocument.text ?? "", /Diploma in Engineering/);
+  assert.match(await extractCvText("readable.pdf", readablePdf.toString("base64")), /Diploma in Engineering/);
 });
 test("TXT extraction rejects empty, unsupported, corrupt, scanned/corrupt and oversized documents", async () => {
   assert.equal(await extractCvText("cv.TXT", Buffer.from(cv).toString("base64")), cv.trim());
@@ -56,6 +48,7 @@ test("TXT extraction rejects empty, unsupported, corrupt, scanned/corrupt and ov
   await assert.rejects(extractCvText("cv.txt", Buffer.from("hi").toString("base64")), /cv_unreadable/);
   await assert.rejects(extractCvText("cv.docx", Buffer.from("broken docx").toString("base64")));
   await assert.rejects(extractCvText("cv.pdf", Buffer.from("broken pdf").toString("base64")));
+  await assert.rejects(extractCvDocument("malformed-page.pdf", malformedPageCvPdf().toString("base64")));
   await assert.rejects(extractCvText("cv.txt", Buffer.alloc(8 * 1024 * 1024 + 1, "x").toString("base64")), /cv_too_large/);
 });
 test("image CV validation accepts supported signatures and rejects mismatched or oversized data", () => {
@@ -86,6 +79,17 @@ test("scanned PDF pages are rendered as compact vision-ready JPEGs", async () =>
   assert.equal(pages[0]?.image?.mediaType, "image/jpeg");
   assert.ok(Buffer.from(pages[0]!.image!.base64, "base64").byteLength < pdf.byteLength);
 });
+test("PDF limits reject more than 10 image-only pages and more than 50 total pages", async () => {
+  const image = syntheticCvJpeg();
+  await assert.rejects(
+    extractCvDocument("too-many-scanned-pages.pdf", imageOnlyCvPdf(image, 11).toString("base64")),
+    /cv_too_many_pages/,
+  );
+  await assert.rejects(
+    extractCvDocument("too-many-pages.pdf", textOnlyCvPdf(cv, 51).toString("base64")),
+    /cv_too_many_pages/,
+  );
+});
 test("retrieval uses only the supplied user's document and sourced relevant references", () => {
   assert.ok(retrieveCv(cv).every((c) => cv.includes(c.content)));
   assert.ok(retrieveCv("x".repeat(60000)).length <= 18);
@@ -95,6 +99,7 @@ test("retrieval uses only the supplied user's document and sourced relevant refe
   const image = { mediaType: "image/png" as const, base64: "c2FtZQ==" };
   assert.notEqual(cvExtractionKey("", "en", image), cvExtractionKey("", "en", { ...image, base64: "b3RoZXI=" }));
   assert.notEqual(cvExtractionKey("", "en", image), cvExtractionKey("", "ms", image));
+  assert.notEqual(cvExtractionKey("Page 1\ntext A", "en", image), cvExtractionKey("Page 1\ntext B", "en", image));
 });
 test("structured extraction rejects unsupported facts even when the model claims evidence", () => {
   const out = validateExtraction(JSON.stringify({

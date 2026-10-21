@@ -44,17 +44,51 @@ function makePdf(objects: Buffer[]): Buffer {
   return Buffer.concat(chunks);
 }
 
-export function imageOnlyCvPdf(jpeg = syntheticCvJpeg()): Buffer {
+export function textOnlyCvPdf(text: string, pageCount = 1): Buffer {
+  const pageIds = Array.from({ length: pageCount }, (_, index) => index + 3);
+  const fontId = pageCount + 3;
+  const firstContentId = fontId + 1;
+  const literal = text.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)").replace(/\s+/g, " ");
+  const objects = [
+    Buffer.from("<< /Type /Catalog /Pages 2 0 R >>"),
+    Buffer.from(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageCount} >>`),
+    ...pageIds.map((_, index) => Buffer.from(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${firstContentId + index} 0 R >>`,
+    )),
+    Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+    ...pageIds.map(() => {
+      const stream = `BT /F1 12 Tf 50 700 Td (${literal}) Tj ET`;
+      return Buffer.from(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
+    }),
+  ];
+  return makePdf(objects);
+}
+
+export function malformedPageCvPdf(): Buffer {
+  return makePdf([
+    Buffer.from("<< /Type /Catalog /Pages 2 0 R >>"),
+    Buffer.from("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+    Buffer.from("this is not a PDF page dictionary"),
+  ]);
+}
+
+export function imageOnlyCvPdf(jpeg = syntheticCvJpeg(), pageCount = 1): Buffer {
+  const imageId = pageCount + 3;
+  const firstContentId = imageId + 1;
   const imageObject = Buffer.concat([
     Buffer.from(`<< /Type /XObject /Subtype /Image /Width 1200 /Height 1600 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`),
     jpeg,
     Buffer.from("\nendstream"),
   ]);
+  const pageObjects = Array.from({ length: pageCount }, (_, index) => [
+    Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${firstContentId + index} 0 R >>`),
+    Buffer.from("<< /Length 33 >>\nstream\nq 612 0 0 792 0 0 cm /Im0 Do Q\nendstream"),
+  ]).flat();
   return makePdf([
     Buffer.from("<< /Type /Catalog /Pages 2 0 R >>"),
-    Buffer.from("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
-    Buffer.from("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>"),
+    Buffer.from(`<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, index) => `${index + 3} 0 R`).join(" ")}] /Count ${pageCount} >>`),
+    ...pageObjects.filter((_, index) => index % 2 === 0),
     imageObject,
-    Buffer.from("<< /Length 33 >>\nstream\nq 612 0 0 792 0 0 cm /Im0 Do Q\nendstream"),
+    ...pageObjects.filter((_, index) => index % 2 === 1),
   ]);
 }
