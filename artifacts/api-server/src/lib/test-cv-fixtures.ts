@@ -72,7 +72,11 @@ export function malformedPageCvPdf(): Buffer {
   ]);
 }
 
-export function imageOnlyCvPdf(jpeg = syntheticCvJpeg(), pageCount = 1): Buffer {
+export function imageOnlyCvPdf(
+  jpeg = syntheticCvJpeg(),
+  pageCount = 1,
+  pageSize: { width: number; height: number } = { width: 612, height: 792 },
+): Buffer {
   const imageId = pageCount + 3;
   const firstContentId = imageId + 1;
   const imageObject = Buffer.concat([
@@ -80,9 +84,10 @@ export function imageOnlyCvPdf(jpeg = syntheticCvJpeg(), pageCount = 1): Buffer 
     jpeg,
     Buffer.from("\nendstream"),
   ]);
+  const content = `q ${pageSize.width} 0 0 ${pageSize.height} 0 0 cm /Im0 Do Q`;
   const pageObjects = Array.from({ length: pageCount }, (_, index) => [
-    Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${firstContentId + index} 0 R >>`),
-    Buffer.from("<< /Length 33 >>\nstream\nq 612 0 0 792 0 0 cm /Im0 Do Q\nendstream"),
+    Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageSize.width} ${pageSize.height}] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${firstContentId + index} 0 R >>`),
+    Buffer.from(`<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`),
   ]).flat();
   return makePdf([
     Buffer.from("<< /Type /Catalog /Pages 2 0 R >>"),

@@ -8,6 +8,10 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_SCANNED_PAGES = 10;
 const MAX_PDF_PAGES = 50;
 const MIN_SEARCHABLE_PAGE_CHARS = 40;
+const SCANNED_PAGE_RENDER_WIDTH = 1200;
+const MAX_SCANNED_PAGE_RENDER_DIMENSION = 8192;
+const MAX_SCANNED_PAGE_RENDER_PIXELS = 12_000_000;
+const MIN_SCANNED_PAGE_RENDER_DIMENSION = 64;
 let pdfJsModuleReady: Promise<void> | undefined;
 
 async function ensurePdfJsModule(): Promise<void> {
@@ -59,6 +63,33 @@ export function normalizeCvText(value: string): string {
   return value.replace(/\u0000/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 60000);
 }
 
+function safeScannedPageScale(width: number, height: number): number {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    throw new CvError("cv_unreadable");
+  }
+
+  const scale = Math.min(
+    SCANNED_PAGE_RENDER_WIDTH / width,
+    MAX_SCANNED_PAGE_RENDER_DIMENSION / width,
+    MAX_SCANNED_PAGE_RENDER_DIMENSION / height,
+    Math.sqrt(MAX_SCANNED_PAGE_RENDER_PIXELS / (width * height)),
+  ) * 0.999;
+  const renderedWidth = Math.ceil(width * scale);
+  const renderedHeight = Math.ceil(height * scale);
+  if (
+    !Number.isFinite(scale) ||
+    scale <= 0 ||
+    renderedWidth < MIN_SCANNED_PAGE_RENDER_DIMENSION ||
+    renderedHeight < MIN_SCANNED_PAGE_RENDER_DIMENSION ||
+    renderedWidth > MAX_SCANNED_PAGE_RENDER_DIMENSION ||
+    renderedHeight > MAX_SCANNED_PAGE_RENDER_DIMENSION ||
+    renderedWidth * renderedHeight > MAX_SCANNED_PAGE_RENDER_PIXELS
+  ) {
+    throw new CvError("cv_unreadable");
+  }
+  return scale;
+}
+
 export async function extractCvText(fileName: string, contentBase64: string): Promise<string> {
   const document = await extractCvDocument(fileName, contentBase64);
   if ("pages" in document) throw new CvError("cv_unreadable");
@@ -93,22 +124,23 @@ export async function extractCvDocument(
       if (scannedPages.length > MAX_SCANNED_PAGES) throw new CvError("cv_too_many_pages");
 
       const canvasImport = () => import("@napi-rs/canvas");
-      const rendered = await Promise.all(scannedPages.map(async ({ pageNumber }) => {
-        const png = Buffer.from(await renderPageAsImage(pdf, pageNumber, {
-          canvasImport,
-          width: 1200,
-        }));
+      const rendered: Array<{ pageNumber: number; image: CvImageInput }> = [];
+      for (const { pageNumber } of scannedPages) {
+        const page = await pdf.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = safeScannedPageScale(viewport.width, viewport.height);
+        const png = Buffer.from(await renderPageAsImage(pdf, pageNumber, { canvasImport, scale }));
         const { createCanvas, loadImage } = await canvasImport();
         const source = await loadImage(png);
         const canvas = createCanvas(source.width, source.height);
         const context = canvas.getContext("2d");
         context.drawImage(source, 0, 0);
         const jpeg = canvas.toBuffer("image/jpeg", 86);
-        return {
+        rendered.push({
           pageNumber,
           image: { mediaType: "image/jpeg" as const, base64: jpeg.toString("base64") },
-        };
-      }));
+        });
+      }
       const renderedByPage = new Map(rendered.map((page) => [page.pageNumber, page.image]));
       const pages = pageTexts.map((text, index) => ({
         pageNumber: index + 1,

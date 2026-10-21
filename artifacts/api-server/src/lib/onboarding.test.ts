@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { loadImage } from "@napi-rs/canvas";
 import { extractCvDocument, extractCvText, validateCvImage } from "./cv";
 import { retrieveCv, retrieveReferences, validateExtraction, cvExtractionKey } from "./cv-retrieval";
 import { imageOnlyCvPdf, malformedPageCvPdf, syntheticCvJpeg, textOnlyCvPdf } from "./test-cv-fixtures";
@@ -78,6 +79,28 @@ test("scanned PDF pages are rendered as compact vision-ready JPEGs", async () =>
   assert.equal(pages[0]?.pageNumber, 1);
   assert.equal(pages[0]?.image?.mediaType, "image/jpeg");
   assert.ok(Buffer.from(pages[0]!.image!.base64, "base64").byteLength < pdf.byteLength);
+  const rendered = await loadImage(Buffer.from(pages[0]!.image!.base64, "base64"));
+  assert.ok(rendered.width >= 1100, "ordinary CV pages retain the 1200px OCR render target");
+  assert.ok(rendered.height >= 1400);
+});
+test("scanned PDF rendering bounds extreme page dimensions before allocating canvases", async () => {
+  const image = syntheticCvJpeg();
+  const tallPage = imageOnlyCvPdf(image, 1, { width: 612, height: 12240 });
+  const document = await extractCvDocument("tall-scan.pdf", tallPage.toString("base64"));
+  assert.ok("pages" in document);
+  const encoded = document.pages?.[0]?.image?.base64;
+  assert.ok(encoded);
+  const rendered = await loadImage(Buffer.from(encoded, "base64"));
+  assert.ok(rendered.width <= 8192);
+  assert.ok(rendered.height <= 8192);
+  assert.ok(rendered.width * rendered.height <= 12_000_000);
+  assert.ok(rendered.width >= 64 && rendered.height >= 64);
+
+  const widePage = imageOnlyCvPdf(image, 1, { width: 61200, height: 792 });
+  await assert.rejects(
+    extractCvDocument("wide-scan.pdf", widePage.toString("base64")),
+    /cv_unreadable/,
+  );
 });
 test("PDF limits reject more than 10 image-only pages and more than 50 total pages", async () => {
   const image = syntheticCvJpeg();
