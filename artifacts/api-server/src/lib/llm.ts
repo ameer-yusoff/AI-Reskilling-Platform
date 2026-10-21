@@ -69,7 +69,8 @@ const servedModel = new Map<string, string>();
  */
 async function resolveModel(endpoint: string, configured: string, apiKey: string): Promise<string> {
   const known = servedModel.get(endpoint);
-  if (known) return known;
+  if (known?.toLowerCase() === configured.toLowerCase()) return known;
+  servedModel.delete(endpoint);
   try {
     const res = await fetch(`https://api.runpod.ai/v2/${endpoint}/openai/v1/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -83,7 +84,7 @@ async function resolveModel(endpoint: string, configured: string, apiKey: string
         servedModel.set(endpoint, match);
         return match;
       }
-      if (ids.length) throw new Error(`Configured model "${configured}" is not served by the endpoint (served: ${ids.join(", ")}).`);
+      throw new Error(`Configured model "${configured}" is not served by the endpoint (served: ${ids.join(", ") || "none"}).`);
     }
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("Configured model ")) throw err;
@@ -164,6 +165,9 @@ export async function endpointHealth(tier: Tier): Promise<EndpointHealth> {
       fetch(`https://api.runpod.ai/v2/${id}/health`, { headers, signal: AbortSignal.timeout(15_000) }),
       fetch(`https://api.runpod.ai/v2/${id}/openai/v1/models`, { headers, signal: AbortSignal.timeout(15_000) }),
     ]);
+    // Every verification replaces the previous observation, including failed
+    // probes. Early health errors must not leave a pre-redeploy model cached.
+    servedModel.delete(id);
     if (healthResult.status === "rejected") {
       const timedOut = healthResult.reason instanceof Error && (healthResult.reason.name === "TimeoutError" || healthResult.reason.name === "AbortError");
       return { status: "error", detail: null, error: `RunPod health probe ${timedOut ? "timed out" : "failed"}.` };

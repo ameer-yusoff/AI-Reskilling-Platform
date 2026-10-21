@@ -236,3 +236,114 @@ test("shares an identical chat request while it is in flight", async () => {
   assert.deepEqual(responses[0], responses[1]);
   assert.equal(chatRequests, 1);
 });
+
+for (const tier of ["main", "light"] as const) {
+  for (const healthFailure of [false, true]) {
+    test(`${tier} chat rejects a changed served model after a cached lookup${healthFailure ? " even when health fails" : ""}`, async () => {
+      configureRunPod({
+        mainId: "main-endpoint",
+        lightId: "light-endpoint",
+        mainModel: "configured/model",
+        lightModel: "configured/model",
+      });
+      const llm = await loadLlm();
+      let served = "configured/model";
+      const sentModels: string[] = [];
+      globalThis.fetch = async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/health")) return jsonResponse({}, healthFailure ? 503 : 200);
+        if (url.endsWith("/models")) return jsonResponse({ data: [{ id: served }] });
+        if (url.endsWith("/chat/completions")) {
+          sentModels.push(JSON.parse(String(init?.body)).model);
+          return jsonResponse({ choices: [{ message: { content: "Answer." } }] });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      };
+
+      await llm.chat(tier, "system", "before redeploy");
+      served = "replacement/model";
+      assert.equal((await llm.endpointHealth(tier)).status, "error");
+      await assert.rejects(
+        llm.chat(tier, "system", "after redeploy"),
+        /Configured model "configured\/model" is not served by the endpoint/,
+      );
+      assert.deepEqual(sentModels, ["configured/model"]);
+    });
+  }
+}
+
+test("refreshes the exact served ID after successful verification", async () => {
+  configureRunPod({ mainId: "main-endpoint", mainModel: "Configured/Model" });
+  const llm = await loadLlm();
+  let served = "configured/model";
+  let modelProbes = 0;
+  const sentModels: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/health")) return jsonResponse({});
+    if (url.endsWith("/models")) {
+      modelProbes++;
+      return jsonResponse({ data: [{ id: served }] });
+    }
+    if (url.endsWith("/chat/completions")) {
+      sentModels.push(JSON.parse(String(init?.body)).model);
+      return jsonResponse({ choices: [{ message: { content: "Answer." } }] });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  await llm.chat("main", "system", "before redeploy");
+  served = "Configured/Model";
+  assert.equal((await llm.endpointHealth("main")).status, "ok");
+  await llm.chat("main", "system", "after redeploy");
+  assert.deepEqual(sentModels, ["configured/model", "Configured/Model"]);
+  assert.equal(modelProbes, 2, "chat should reuse the refreshed verified ID");
+});
+
+test("does not reuse the cached model after the configuration changes", async () => {
+  configureRunPod({ mainId: "main-endpoint", mainModel: "old/model" });
+  const llm = await loadLlm();
+  let served = "old/model";
+  const sentModels: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/models")) return jsonResponse({ data: [{ id: served }] });
+    if (url.endsWith("/chat/completions")) {
+      sentModels.push(JSON.parse(String(init?.body)).model);
+      return jsonResponse({ choices: [{ message: { content: "Answer." } }] });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  await llm.chat("main", "system", "before redeploy");
+  served = "new/model";
+  process.env["RUNPOD_LLM_MODEL"] = "New/Model";
+  await llm.chat("main", "system", "after redeploy");
+  assert.deepEqual(sentModels, ["old/model", "new/model"]);
+});
+
+test("does not send the old model when verification finds no served models", async () => {
+  configureRunPod({ mainId: "main-endpoint", mainModel: "configured/model" });
+  const llm = await loadLlm();
+  let ids = ["configured/model"];
+  let chatRequests = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/health")) return jsonResponse({});
+    if (url.endsWith("/models")) return jsonResponse({ data: ids.map((id) => ({ id })) });
+    if (url.endsWith("/chat/completions")) {
+      chatRequests++;
+      return jsonResponse({ choices: [{ message: { content: "Answer." } }] });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  await llm.chat("main", "system", "before redeploy");
+  ids = [];
+  assert.equal((await llm.endpointHealth("main")).status, "error");
+  await assert.rejects(
+    llm.chat("main", "system", "after redeploy"),
+    /Configured model "configured\/model" is not served by the endpoint \(served: none\)/,
+  );
+  assert.equal(chatRequests, 1);
+});

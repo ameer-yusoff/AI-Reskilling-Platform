@@ -7,3 +7,6 @@ description: Served model id casing and cold-start timing for the RunPod endpoin
 **How to apply:** if agents 502 while health is ok, check `/openai/v1/models` first.
 - Cold start measured 2026-10-21: light (9B) ~3.5 min, main (27B) ~4.8 min. Warm calls 10-30 s.
 - The user's endpoint secrets were pasted as full `/v2/<id>/run` URLs; code tolerates both.
+- Treat a successful but empty model listing as authoritative: do not generate with an assumed model. Keep the existing configured-name fallback only for unavailable discovery during cold starts.
+**Why:** an empty advertised list can indicate redeployment; assuming the old configured name would hide failed model verification.
+**How to apply:** preserve the distinction between a successful listing with no matching model and a probe that could not complete.
