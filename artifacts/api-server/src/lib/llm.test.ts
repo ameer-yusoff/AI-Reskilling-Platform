@@ -212,3 +212,27 @@ test("accepts the lowercase served model ID and sends it in chat requests", asyn
   assert.deepEqual(result, { content: "A useful answer.", model: "qwen/qwen3.5-27b" });
   assert.equal(chatPayload?.model, "qwen/qwen3.5-27b");
 });
+
+test("shares an identical chat request while it is in flight", async () => {
+  configureRunPod({ mainId: "main-endpoint" });
+  const llm = await loadLlm();
+  let chatRequests = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/models")) return jsonResponse({ data: [{ id: "qwen/qwen3.5-27b" }] });
+    if (url.endsWith("/chat/completions")) {
+      chatRequests++;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return jsonResponse({ choices: [{ message: { content: "One shared answer." } }] });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  const responses = await Promise.all([
+    llm.chat("main", "same system prompt", "same user prompt"),
+    llm.chat("main", "same system prompt", "same user prompt"),
+  ]);
+
+  assert.deepEqual(responses[0], responses[1]);
+  assert.equal(chatRequests, 1);
+});

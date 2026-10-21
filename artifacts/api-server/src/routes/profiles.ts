@@ -19,6 +19,7 @@ import { buildPlan } from "../lib/planner";
 import { canAccessProfile, getLatestPlan, getProfileRow, planToApi, profileScope, profileToApi, type ProfileRow } from "../lib/profiles";
 import { agentPrompt, agentTier, hashInput, SOURCE_AEI, type AgentName, type Lang } from "../lib/agents";
 import { chat, AiNotConnectedError, AiTimeoutError } from "../lib/llm";
+import { consumeAiRequest } from "../lib/ai-rate-limit";
 import { SDG_TARGETS } from "../data/courses";
 
 const router: IRouter = Router();
@@ -305,6 +306,18 @@ router.post("/profiles/:id/insights", async (req, res) => {
       res.json({ ...insightToApi(cached), cached: true });
       return;
     }
+  }
+  const rateLimit = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!);
+  res.setHeader("X-RateLimit-Limit", String(rateLimit.limit));
+  res.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
+  if (!rateLimit.allowed) {
+    res.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+    res.status(429).json({
+      error: "ai_rate_limited",
+      message: "You've reached the AI request limit. Please try again after the retry period.",
+      retryAfterSeconds: rateLimit.retryAfterSeconds,
+    });
+    return;
   }
   try {
     const { system, user } = agentPrompt(agent, ctx, lang);

@@ -4,6 +4,7 @@ import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { Request } from "express";
 import { CreatePredictionBody } from "@workspace/api-zod";
 import { aiStatus, chat, AiNotConnectedError, AiTimeoutError } from "../lib/llm";
+import { consumeAiRequest } from "../lib/ai-rate-limit";
 import { loadRoles } from "../lib/catalog";
 import { hashInput, predictionPrompt, SOURCE_AEI, SOURCE_DOSM, type Lang } from "../lib/agents";
 
@@ -93,6 +94,18 @@ router.post("/predictions", async (req, res) => {
     const { id: _id, createdAt: _c, ...copy } = cached;
     const [row] = await db.insert(predictionsTable).values({ ...copy, ...owner }).returning();
     res.status(201).json(predictionToApi(row, true));
+    return;
+  }
+  const rateLimit = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!);
+  res.setHeader("X-RateLimit-Limit", String(rateLimit.limit));
+  res.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
+  if (!rateLimit.allowed) {
+    res.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+    res.status(429).json({
+      error: "ai_rate_limited",
+      message: "You've reached the AI request limit. Please try again after the retry period.",
+      retryAfterSeconds: rateLimit.retryAfterSeconds,
+    });
     return;
   }
   try {

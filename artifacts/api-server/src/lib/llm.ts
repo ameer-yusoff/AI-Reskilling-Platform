@@ -1,4 +1,6 @@
 // RunPod Serverless vLLM client (OpenAI-compatible). Only called on demand.
+import { createHash } from "node:crypto";
+
 export class AiNotConnectedError extends Error {}
 export class AiTimeoutError extends Error {}
 
@@ -91,6 +93,22 @@ async function resolveModel(endpoint: string, configured: string, apiKey: string
 }
 
 export async function chat(tier: Tier, system: string, user: string): Promise<{ content: string; model: string }> {
+  const requestKey = createHash("sha256").update(tier).update("\0").update(system).update("\0").update(user).digest("hex");
+  const inFlight = pendingChats.get(requestKey);
+  if (inFlight) return inFlight;
+
+  const request = generateChat(tier, system, user);
+  pendingChats.set(requestKey, request);
+  try {
+    return await request;
+  } finally {
+    if (pendingChats.get(requestKey) === request) pendingChats.delete(requestKey);
+  }
+}
+
+const pendingChats = new Map<string, Promise<{ content: string; model: string }>>();
+
+async function generateChat(tier: Tier, system: string, user: string): Promise<{ content: string; model: string }> {
   const c = cfg();
   if (!c.apiKey || !c.mainId) throw new AiNotConnectedError("AI engine not connected");
   const useLight = tier === "light" && !!c.lightId;
