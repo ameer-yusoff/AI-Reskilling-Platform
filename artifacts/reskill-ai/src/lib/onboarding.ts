@@ -45,4 +45,4 @@ export function safeNext(raw: string | null | undefined): string | null {
 }
 
 export const CV_MAX_BYTES = 8 * 1024 * 1024;
-export const CV_OK = /\.(pdf|docx|txt)$/i;
+export const CV_OK = /\.(pdf|docx|txt|png|jpe?g|webp)$/i;

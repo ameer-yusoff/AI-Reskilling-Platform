@@ -238,7 +238,7 @@ function CvPanel({ p }: { p: Profile }) {
         <div className="mt-2 max-w-full truncate whitespace-nowrap text-sm font-semibold">{up.isPending ? t("cv.reading") : p.cvFileName ? t("cv.replace") : t("cv.drop")}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">{t("ob.cv.formats")}</div>
       </button>
-      <input ref={ref} type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={(e) => { handle(e.target.files?.[0]); e.target.value = ""; }} data-testid="input-cv-file" />
+      <input ref={ref} type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { handle(e.target.files?.[0]); e.target.value = ""; }} data-testid="input-cv-file" />
       {p.cvFileName && (
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div className="col-span-2 min-w-0"><dt className="text-xs text-muted-foreground">{t("cv.file")}</dt><dd title={p.cvFileName} className="truncate font-medium">{p.cvFileName}</dd></div>

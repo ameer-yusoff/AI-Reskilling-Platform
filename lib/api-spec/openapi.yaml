@@ -214,7 +214,7 @@ paths:
     post:
       operationId: uploadCv
       tags: [profiles]
-      description: Upload a CV (PDF, DOCX or TXT as base64). Text is extracted, skills are matched against the skill taxonomy with evidence, and the original file is not stored.
+      description: Upload a CV (PDF, DOCX, TXT, PNG, JPG/JPEG or WEBP as base64). Text documents are parsed locally; image CVs are read by the configured multimodal AI model. The original file is not stored.
       requestBody:
         required: true
         content:

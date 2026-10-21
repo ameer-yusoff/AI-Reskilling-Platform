@@ -1003,7 +1003,7 @@ export const getUploadCvUrl = (id: number,) => {
 }
 
 /**
- * Upload a CV (PDF, DOCX or TXT as base64). Text is extracted, skills are matched against the skill taxonomy with evidence, and the original file is not stored.
+ * Upload a CV (PDF, DOCX, TXT, PNG, JPG/JPEG or WEBP as base64). Text documents are parsed locally; image CVs are read by the configured multimodal AI model. The original file is not stored.
  */
 export const uploadCv = async (id: number,
     cvUpload: CvUpload, options?: Parameters<typeof customFetch>[1]): Promise<Profile> => {

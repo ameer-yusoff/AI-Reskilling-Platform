@@ -23,7 +23,8 @@ export class RollingWindowLimiter {
     private readonly now: () => number = Date.now,
   ) {}
 
-  consume(key: string, limit: number): AiRateLimitResult {
+  consume(key: string, limit: number, cost = 1): AiRateLimitResult {
+    if (!Number.isSafeInteger(cost) || cost < 1) throw new Error("AI request cost must be a positive whole number.");
     const now = this.now();
     const cutoff = now - this.windowMs;
     const timestamps = (this.requests.get(key) ?? []).filter((timestamp) => timestamp > cutoff);
@@ -37,12 +38,13 @@ export class RollingWindowLimiter {
       this.nextCleanupAt = now + Math.min(this.windowMs, 60_000);
     }
 
-    if (timestamps.length >= limit) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((timestamps[0]! + this.windowMs - now) / 1000));
+    if (timestamps.length + cost > limit) {
+      const neededToExpire = Math.max(1, timestamps.length + cost - limit);
+      const retryAfterSeconds = Math.max(1, Math.ceil((timestamps[neededToExpire - 1]! + this.windowMs - now) / 1000));
       return { allowed: false, limit, remaining: 0, retryAfterSeconds };
     }
 
-    timestamps.push(now);
+    for (let i = 0; i < cost; i++) timestamps.push(now);
     this.requests.set(key, timestamps);
     return {
       allowed: true,
@@ -80,7 +82,7 @@ function readConfig(): RateLimitConfig {
 let activeLimiter: RollingWindowLimiter | undefined;
 let activeConfigKey: string | undefined;
 
-export function consumeAiRequest(kind: AiCallerKind, identity: string): AiRateLimitResult {
+export function consumeAiRequest(kind: AiCallerKind, identity: string, cost = 1): AiRateLimitResult {
   const config = readConfig();
   const configKey = `${config.windowMs}:${config.userLimit}:${config.guestLimit}`;
   if (!activeLimiter || activeConfigKey !== configKey) {
@@ -88,5 +90,5 @@ export function consumeAiRequest(kind: AiCallerKind, identity: string): AiRateLi
     activeConfigKey = configKey;
   }
   const limit = kind === "user" ? config.userLimit : config.guestLimit;
-  return activeLimiter.consume(`${kind}:${identity}`, limit);
+  return activeLimiter.consume(`${kind}:${identity}`, limit, cost);
 }

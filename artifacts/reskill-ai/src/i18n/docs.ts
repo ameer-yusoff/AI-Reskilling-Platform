@@ -53,7 +53,7 @@ export const docsEn = {
   "docs.ai.cold": "A health check may wake a sleeping server. We make no claim that idle time is free of GPU cost.",
   "docs.ai.ids": "Endpoint IDs are not public secrets. API keys are never shown.",
   "docs.ai.configured": "Provider, model and health come from the live AI status. If the API key is missing, the service shows as not configured.",
-  "docs.ai.privacy": "With your consent, text extracted from your CV is sent to RunPod. The original file is discarded. Extracted text and evidence are retained with your profile; guest profiles are kept for 7 days.",
+  "docs.ai.privacy": "With your consent, CV text and image content are sent to RunPod for analysis. The original file is discarded and not retained. Extracted text and evidence are retained with your profile; guest profiles are kept for 7 days.",
 
   "docs.riasec.items": "30 statements written by this app and translated into three languages. They are not the validated, licensed O*NET Interest Profiler. Answers use a 1-5 scale.",
   "docs.riasec.scoring": "The API needs at least 18 unique answers and at least 3 per dimension; the onboarding wizard asks for all 30. Each dimension is the mean answer, rounded to 2 decimals. Ties break in the fixed order R, I, A, S, E, C.",
@@ -129,7 +129,7 @@ export const docsMs: Record<DocsKey, string> = {
   "docs.ai.cold": "Semakan kesihatan mungkin membangunkan pelayan yang tidur. Kami tidak mendakwa masa terbiar bebas kos GPU.",
   "docs.ai.ids": "ID titik akhir bukan rahsia awam. Kunci API tidak pernah ditunjukkan.",
   "docs.ai.configured": "Penyedia, model dan kesihatan datang daripada status AI langsung. Jika kunci API tiada, perkhidmatan ditunjukkan sebagai belum dikonfigurasi.",
-  "docs.ai.privacy": "Dengan persetujuan anda, teks yang diekstrak daripada CV dihantar ke RunPod. Fail asal dibuang. Teks dan bukti yang diekstrak disimpan bersama profil anda; profil tetamu disimpan selama 7 hari.",
+  "docs.ai.privacy": "Dengan persetujuan anda, teks dan kandungan imej CV dihantar ke RunPod untuk dianalisis. Fail asal dibuang dan tidak disimpan. Teks serta bukti yang diekstrak disimpan bersama profil anda; profil tetamu disimpan selama 7 hari.",
 
   "docs.riasec.items": "30 kenyataan yang ditulis oleh aplikasi ini dan diterjemah ke tiga bahasa. Ia bukan O*NET Interest Profiler yang disahkan dan berlesen. Jawapan menggunakan skala 1-5.",
   "docs.riasec.scoring": "API memerlukan sekurang-kurangnya 18 jawapan unik dan sekurang-kurangnya 3 bagi setiap dimensi; wizard onboarding meminta kesemua 30. Setiap dimensi ialah purata jawapan, dibundarkan kepada 2 perpuluhan. Seri diputuskan mengikut susunan tetap R, I, A, S, E, C.",
@@ -142,7 +142,7 @@ export const docsMs: Record<DocsKey, string> = {
   "docs.sdg.method": "Pautan tematik statik antara sektor dan Matlamat Pembangunan Mampan PBB.",
   "docs.sdg.limits": "Bukan impak yang diukur atau diperakui, dan bukan statistik SDG.",
 
-  "docs.demo.org": "Akaun demo Employee dan Educators ditandakan sebagai contoh. Organisasi dan ahlinya bukan fakta luaran.",
+  "docs.demo.org": "Akaun demo Kakitangan dan Pendidik ditandakan sebagai contoh. Organisasi dan ahlinya bukan fakta luaran.",
   "docs.demo.individual": "Pendaftaran individu contoh menggunakan alamat @example.invalid yang unik. Tiada e-mel pernah dihantar.",
   "docs.demo.private": "Input sebenar pengguna log masuk dan tetamu adalah peribadi dan tidak pernah dikira sebagai statistik pasaran.",
 
@@ -203,7 +203,7 @@ export const docsZh: Record<DocsKey, string> = {
   "docs.ai.cold": "健康检查可能唤醒休眠的服务器。我们不声称空闲时不产生 GPU 费用。",
   "docs.ai.ids": "接口 ID 不是公开机密。API 密钥从不显示。",
   "docs.ai.configured": "服务商、模型与健康状况来自实时 AI 状态。若缺少 API 密钥，服务会显示为未配置。",
-  "docs.ai.privacy": "经你同意，从简历提取的文字会发送至 RunPod。原始文件会被丢弃。提取的文字与依据随档案保存；访客档案保留 7 天。",
+  "docs.ai.privacy": "经你同意，简历文字和图像内容会发送至 RunPod 进行分析。原始文件会被丢弃且不会保留。提取的文字与依据随档案保存；访客档案保留 7 天。",
 
   "docs.riasec.items": "由本应用编写并译成三种语言的 30 个陈述。它不是经过验证并获授权的 O*NET Interest Profiler。答案采用 1-5 分。",
   "docs.riasec.scoring": "API 需要至少 18 个不重复答案，且每个维度至少 3 个；引导流程要求回答全部 30 题。每个维度取答案平均值，保留 2 位小数。平分时按固定顺序 R、I、A、S、E、C 决定。",
@@ -216,7 +216,7 @@ export const docsZh: Record<DocsKey, string> = {
   "docs.sdg.method": "行业与联合国可持续发展目标之间的静态主题关联。",
   "docs.sdg.limits": "并非经测量或认证的影响，也不是 SDG 统计数据。",
 
-  "docs.demo.org": "Employee 与 Educators 演示账户已标注为示例。其机构与成员并非外部事实。",
+  "docs.demo.org": "员工与教育工作者演示账户已标注为示例。其机构与成员并非外部事实。",
   "docs.demo.individual": "示例个人注册使用唯一的 @example.invalid 地址，不会发送任何邮件。",
   "docs.demo.private": "已登录用户与访客的真实输入均为私密，绝不计入市场统计。",
 

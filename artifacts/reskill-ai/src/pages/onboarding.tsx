@@ -49,7 +49,7 @@ function serverStep(p: Profile): ObStep {
 }
 const isAiDown = (e: unknown) => {
   const c = errCode(e);
-  return c === "ai_not_connected" || c === "ai_timeout" || c === "ai_unavailable" || c === "ai_failed" || (errStatus(e) ?? 0) >= 502;
+  return c !== "ai_vision_unsupported" && (c === "ai_not_connected" || c === "ai_timeout" || c === "ai_unavailable" || c === "ai_failed" || (errStatus(e) ?? 0) >= 502);
 };
 
 export default function Onboarding() {
@@ -334,7 +334,7 @@ function CvStep({ p, scope }: { p: Profile; scope: string }) {
         <div className="mt-3 text-sm font-semibold">{up.isPending ? t("ob.cv.reading") : p.cvFileName ? t("ob.cv.replace") : t("ob.cv.pick")}</div>
         <div className="mt-1 text-xs text-muted-foreground">{t("ob.cv.formats")}</div>
       </button>
-      <input ref={ref} type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) send(f); e.target.value = ""; }} data-testid="input-cv-file" />
+      <input ref={ref} type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) send(f); e.target.value = ""; }} data-testid="input-cv-file" />
       <p className="mt-3 text-xs text-muted-foreground">{t("ob.cv.privacy")}</p>
       {up.isPending && since && <div className="mt-4"><AiWait since={since} /></div>}
       {local && <div className="mt-4"><ErrorBox message={local} /></div>}

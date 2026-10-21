@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { extractCvText } from "./cv";
+import { extractCvText, validateCvImage } from "./cv";
 import { retrieveCv, retrieveReferences, validateExtraction, cvExtractionKey } from "./cv-retrieval";
 import { scoreRiasec } from "./riasec-scoring";
 import { RIASEC_QUESTIONS } from "../data/riasec";
@@ -57,12 +57,33 @@ test("TXT extraction rejects empty, unsupported, corrupt, scanned/corrupt and ov
   await assert.rejects(extractCvText("cv.pdf", Buffer.from("broken pdf").toString("base64")));
   await assert.rejects(extractCvText("cv.txt", Buffer.alloc(8 * 1024 * 1024 + 1, "x").toString("base64")), /cv_too_large/);
 });
+test("image CV validation accepts supported signatures and rejects mismatched or oversized data", () => {
+  const png = Buffer.alloc(32);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const jpeg = Buffer.alloc(32);
+  jpeg.set([0xff, 0xd8, 0xff]);
+  const webp = Buffer.alloc(32);
+  webp.write("RIFF", 0, "ascii");
+  webp.writeUInt32LE(webp.length - 8, 4);
+  webp.write("WEBP", 8, "ascii");
+  webp.write("VP8 ", 12, "ascii");
+
+  assert.equal(validateCvImage("cv.png", png.toString("base64")).mediaType, "image/png");
+  assert.equal(validateCvImage("cv.jpeg", jpeg.toString("base64")).mediaType, "image/jpeg");
+  assert.equal(validateCvImage("cv.webp", webp.toString("base64")).mediaType, "image/webp");
+  assert.throws(() => validateCvImage("cv.webp", png.toString("base64")), /cv_corrupt/);
+  assert.throws(() => validateCvImage("cv.png", Buffer.from("not an image").toString("base64")), /cv_corrupt/);
+  assert.throws(() => validateCvImage("cv.png", Buffer.alloc(8 * 1024 * 1024 + 1, 1).toString("base64")), /cv_too_large/);
+});
 test("retrieval uses only the supplied user's document and sourced relevant references", () => {
   assert.ok(retrieveCv(cv).every((c) => cv.includes(c.content)));
   assert.ok(retrieveCv("x".repeat(60000)).length <= 18);
   assert.ok(retrieveReferences(cv).some((r) => r.name === "Programming" && r.url.startsWith("https://www.onet")));
   assert.ok(!retrieveCv(cv).some((r) => r.content.includes("OTHER_USER_PRIVATE")));
   assert.notEqual(cvExtractionKey(cv, "en"), cvExtractionKey(cv, "zh"));
+  const image = { mediaType: "image/png" as const, base64: "c2FtZQ==" };
+  assert.notEqual(cvExtractionKey("", "en", image), cvExtractionKey("", "en", { ...image, base64: "b3RoZXI=" }));
+  assert.notEqual(cvExtractionKey("", "en", image), cvExtractionKey("", "ms", image));
 });
 test("structured extraction rejects unsupported facts even when the model claims evidence", () => {
   const out = validateExtraction(JSON.stringify({

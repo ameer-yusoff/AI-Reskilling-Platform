@@ -12,17 +12,17 @@ import {
   RunProfileAgentBody,
 } from "@workspace/api-zod";
 import { loadCourses, loadRoles, loadSkills, roleToApi } from "../lib/catalog";
-import { extractCvText, extractSkills, CvError } from "../lib/cv";
+import { extractCvText, extractSkills, CvError, isCvImageFile, validateCvImage, type CvImageInput } from "../lib/cv";
 import { RIASEC_QUESTIONS } from "../data/riasec";
 import { scoreRiasec } from "../lib/riasec-scoring";
 import { scoreRole } from "../lib/scoring";
 import { buildPlan } from "../lib/planner";
 import { canAccessProfile, getLatestPlan, getProfileRow, planToApi, profileScope, profileToApi, type ProfileRow } from "../lib/profiles";
 import { agentPrompt, agentTier, hashInput, SOURCE_AEI, type AgentName, type Lang } from "../lib/agents";
-import { chat, AiNotConnectedError, AiTimeoutError } from "../lib/llm";
+import { chat, AiNotConnectedError, AiTimeoutError, AiVisionUnsupportedError } from "../lib/llm";
 import { consumeAiRequest } from "../lib/ai-rate-limit";
 import { SDG_TARGETS } from "../data/courses";
-import { CvAiOutputError, cvExtractionKey, extractCvProfile, retrieveCv, retrieveReferences } from "../lib/cv-retrieval";
+import { CvAiOutputError, cvExtractionKey, extractCvImageText, extractCvProfile, retrieveCv, retrieveReferences } from "../lib/cv-retrieval";
 
 const router: IRouter = Router();
 const cvRequests = new Map<number, Promise<unknown>>();
@@ -143,9 +143,11 @@ router.post("/profiles/:id/cv", async (req, res) => {
   const p = await requireProfile(id, req, res);
   if (!p) return;
   if (!body.consent) { res.status(400).json({ error: "cv_consent_required" }); return; }
-  let text: string;
+  let text: string | null = null;
+  let image: CvImageInput | undefined;
   try {
-    text = await extractCvText(body.fileName, body.contentBase64);
+    if (isCvImageFile(body.fileName)) image = validateCvImage(body.fileName, body.contentBase64);
+    else text = await extractCvText(body.fileName, body.contentBase64);
   } catch (err) {
     if (err instanceof CvError) {
       res.status(400).json({ error: err.message });
@@ -156,22 +158,23 @@ router.post("/profiles/:id/cv", async (req, res) => {
     return;
   }
   const lang = body.lang ?? "en";
-  const key = cvExtractionKey(text, lang);
+  const key = cvExtractionKey(text ?? "", lang, image);
   if (p.cvExtractionKey === key) { res.json(profileToApi(p, await loadSkills())); return; }
   if (cvRequests.has(id)) { res.status(409).json({ error: "cv_processing" }); return; }
-  const rate = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!);
+  const rate = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!, image ? 2 : 1);
   if (!rate.allowed) { res.setHeader("Retry-After", String(rate.retryAfterSeconds)); res.status(429).json({ error: "ai_rate_limited", retryAfterSeconds: rate.retryAfterSeconds }); return; }
   const work = (async () => {
-    const result = await extractCvProfile(text, lang);
+    const cvText = image ? await extractCvImageText(image) : text!;
+    const result = await extractCvProfile(cvText, lang, image);
     const allSkills = await loadSkills();
-    const extracted = extractSkills(text, allSkills);
+    const extracted = extractSkills(cvText, allSkills);
     const manual = p.skills.filter((s) => s.status === "self_reported" && !extracted.some((e) => e.skillId === s.skillId));
     const isOrg = req.user?.role === "hr" || req.user?.role === "tvet";
     const [row] = await db.update(profilesTable).set({
       name: result.fields.name ?? "", currentRole: result.fields.currentRole,
       ...(isOrg ? {} : { organization: result.fields.organization }),
       education: result.fields.education, experience: result.fields.experience,
-      cvText: text, cvFileName: body.fileName, cvUploadedAt: new Date(),
+      cvText, cvFileName: body.fileName, cvUploadedAt: new Date(),
       cvEvidence: result.evidence, cvExtractionKey: key, verified: false, onboardingStep: "review",
       skills: [...extracted, ...manual],
     }).where(eq(profilesTable.id, id)).returning();
@@ -181,7 +184,13 @@ router.post("/profiles/:id/cv", async (req, res) => {
   try { res.json(await work); }
   catch (err) {
     req.log.warn({ profileId: id, kind: err instanceof AiNotConnectedError ? "not_configured" : "extraction_failed" }, "CV extraction failed");
-    res.status(err instanceof AiNotConnectedError ? 503 : 502).json({ error: err instanceof AiNotConnectedError ? "ai_not_connected" : err instanceof AiTimeoutError ? "ai_timeout" : err instanceof CvAiOutputError ? "cv_ai_invalid" : "ai_failed" });
+    const error = err instanceof AiNotConnectedError ? "ai_not_connected"
+      : err instanceof AiTimeoutError ? "ai_timeout"
+        : err instanceof AiVisionUnsupportedError ? "ai_vision_unsupported"
+          : err instanceof CvError ? err.message
+          : err instanceof CvAiOutputError ? "cv_ai_invalid" : "ai_failed";
+    const status = err instanceof CvError ? 400 : err instanceof AiNotConnectedError ? 503 : 502;
+    res.status(status).json({ error });
   } finally { cvRequests.delete(id); }
 });
 

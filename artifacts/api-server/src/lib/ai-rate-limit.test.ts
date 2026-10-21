@@ -32,3 +32,21 @@ test("keeps signed-in and guest identities isolated", () => {
   assert.equal(limiter.consume("guest:browser-token", 1).allowed, true);
   assert.equal(limiter.consume("guest:other-browser", 1).allowed, true);
 });
+
+test("reserves multiple AI calls atomically and reports when a costly request cannot fit", () => {
+  const limiter = new RollingWindowLimiter(60_000, () => 10_000);
+  assert.deepEqual(limiter.consume("guest:image-upload", 5, 2), {
+    allowed: true,
+    limit: 5,
+    remaining: 3,
+    retryAfterSeconds: 0,
+  });
+  assert.equal(limiter.consume("guest:image-upload", 5, 2).remaining, 1);
+  assert.deepEqual(limiter.consume("guest:image-upload", 5, 2), {
+    allowed: false,
+    limit: 5,
+    remaining: 0,
+    retryAfterSeconds: 60,
+  });
+  assert.equal(limiter.consume("guest:image-upload", 5, 1).remaining, 0, "a rejected reservation must not consume quota");
+});

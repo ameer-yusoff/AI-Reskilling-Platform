@@ -252,6 +252,45 @@ for (const dedicatedLight of [false, true]) {
   });
 }
 
+test("sends the actual image to RunPod through the multimodal chat content shape", async () => {
+  configureRunPod({ mainId: "main-endpoint", mainModel: "qwen/qwen3.5-27b" });
+  const llm = await loadLlm();
+  let imagePayload: unknown;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/models")) return jsonResponse({ data: [{ id: "qwen/qwen3.5-27b" }] });
+    if (url.endsWith("/chat/completions")) {
+      const payload = JSON.parse(String(init?.body)) as { messages: { role: string; content: unknown }[] };
+      imagePayload = payload.messages[1]?.content;
+      return jsonResponse({ choices: [{ message: { content: "Transcribed CV text." } }] });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  const image = { mediaType: "image/png" as const, base64: "aGVsbG8=" };
+  await llm.chatWithImage("light", "system prompt", "Read this CV image.", image);
+  assert.deepEqual(imagePayload, [
+    { type: "text", text: "Read this CV image." },
+    { type: "image_url", image_url: { url: "data:image/png;base64,aGVsbG8=" } },
+  ]);
+});
+
+test("reports a clear error when a RunPod endpoint rejects multimodal image input", async () => {
+  configureRunPod({ mainId: "main-endpoint", mainModel: "qwen/qwen3.5-27b" });
+  const llm = await loadLlm();
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/models")) return jsonResponse({ data: [{ id: "qwen/qwen3.5-27b" }] });
+    if (url.endsWith("/chat/completions")) return jsonResponse({ error: "unsupported image input" }, 422);
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  await assert.rejects(
+    llm.chatWithImage("light", "system", "Read this CV.", { mediaType: "image/jpeg", base64: "aGVsbG8=" }),
+    (error: unknown) => error instanceof Error && error.message === "The configured RunPod model rejected multimodal image input.",
+  );
+});
+
 test("shares an identical chat request while it is in flight", async () => {
   configureRunPod({ mainId: "main-endpoint" });
   const llm = await loadLlm();

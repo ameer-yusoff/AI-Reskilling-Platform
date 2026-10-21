@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 
 export class AiNotConnectedError extends Error {}
 export class AiTimeoutError extends Error {}
+export class AiVisionUnsupportedError extends Error {}
 
 type Tier = "main" | "light";
+export type ChatImage = { mediaType: "image/png" | "image/jpeg" | "image/webp"; base64: string };
 
 /** Accepts a bare endpoint ID or a pasted URL such as https://api.runpod.ai/v2/<id>/run. */
 function endpointId(raw: string | undefined): string | undefined {
@@ -94,11 +96,22 @@ async function resolveModel(endpoint: string, configured: string, apiKey: string
 }
 
 export async function chat(tier: Tier, system: string, user: string): Promise<{ content: string; model: string }> {
-  const requestKey = createHash("sha256").update(tier).update("\0").update(system).update("\0").update(user).digest("hex");
+  return chatRequest(tier, system, user);
+}
+
+export async function chatWithImage(tier: Tier, system: string, user: string, image: ChatImage): Promise<{ content: string; model: string }> {
+  return chatRequest(tier, system, user, image);
+}
+
+async function chatRequest(tier: Tier, system: string, user: string, image?: ChatImage): Promise<{ content: string; model: string }> {
+  const requestKey = createHash("sha256")
+    .update(tier).update("\0").update(system).update("\0").update(user).update("\0")
+    .update(image ? `${image.mediaType}\0${createHash("sha256").update(image.base64).digest("hex")}` : "")
+    .digest("hex");
   const inFlight = pendingChats.get(requestKey);
   if (inFlight) return inFlight;
 
-  const request = generateChat(tier, system, user);
+  const request = generateChat(tier, system, user, image);
   pendingChats.set(requestKey, request);
   try {
     return await request;
@@ -109,7 +122,7 @@ export async function chat(tier: Tier, system: string, user: string): Promise<{ 
 
 const pendingChats = new Map<string, Promise<{ content: string; model: string }>>();
 
-async function generateChat(tier: Tier, system: string, user: string): Promise<{ content: string; model: string }> {
+async function generateChat(tier: Tier, system: string, user: string, image?: ChatImage): Promise<{ content: string; model: string }> {
   const c = cfg();
   if (!c.apiKey || !c.mainId) throw new AiNotConnectedError("AI engine not connected");
   const useLight = tier === "light" && !!c.lightId;
@@ -126,7 +139,15 @@ async function generateChat(tier: Tier, system: string, user: string): Promise<{
       max_tokens: 1800,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: user },
+        {
+          role: "user",
+          content: image
+            ? [
+                { type: "text", text: user },
+                { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.base64}` } },
+              ]
+            : user,
+        },
       ],
       chat_template_kwargs: { enable_thinking: false },
     }),
@@ -137,8 +158,10 @@ async function generateChat(tier: Tier, system: string, user: string): Promise<{
     throw err;
   }
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`RunPod ${res.status}: ${body.slice(0, 300)}`);
+    if (image && [400, 415, 422].includes(res.status)) {
+      throw new AiVisionUnsupportedError("The configured RunPod model rejected multimodal image input.");
+    }
+    throw new Error(`RunPod request failed with HTTP ${res.status}.`);
   }
   const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const content = (json.choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
