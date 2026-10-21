@@ -10,3 +10,6 @@ description: Served model id casing and cold-start timing for the RunPod endpoin
 - Treat a successful but empty model listing as authoritative: do not generate with an assumed model. Keep the existing configured-name fallback only for unavailable discovery during cold starts.
 **Why:** an empty advertised list can indicate redeployment; assuming the old configured name would hide failed model verification.
 **How to apply:** preserve the distinction between a successful listing with no matching model and a probe that could not complete.
+- Active RunPod Serverless workers are billed continuously; flex workers bill through startup, execution, and idle timeout. FlashBoot is enabled by default.
+**Why:** avoiding cold starts has a direct recurring compute cost, and the exact amount depends on the endpoint's selected GPU.
+**How to apply:** check the endpoint GPU and current rate before enabling active workers or extending idle timeout; prefer flex for sporadic traffic.

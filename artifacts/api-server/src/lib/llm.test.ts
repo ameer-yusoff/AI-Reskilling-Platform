@@ -116,6 +116,61 @@ test("verifies healthy main and light endpoint models", async () => {
   assert.equal(status.lightStatus, "ok");
 });
 
+test("measures a cold endpoint startup separately from its ready-to-response time", async () => {
+  configureRunPod({ mainId: "main-endpoint", lightId: "light-endpoint" });
+  const llm = await loadLlm();
+  let healthCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/openai/v1/models")) {
+      return jsonResponse({ data: [{ id: "qwen/qwen3.5-9b" }] });
+    }
+    if (url.endsWith("/health")) {
+      healthCalls++;
+      return jsonResponse({ workers: { ready: healthCalls === 1 ? 0 : 1 } });
+    }
+    if (url.endsWith("/openai/v1/chat/completions")) {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      return jsonResponse({ choices: [{ message: { content: "CV read" } }] });
+    }
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  const result = await llm.chat("light", "system", "Read this CV.", { measureEndpointStartup: true });
+
+  assert.equal(result.timing.endpointWarmBeforeRequest, false);
+  assert.ok(result.timing.endpointStartupMs !== null && result.timing.endpointStartupMs > 0);
+  assert.ok(result.timing.endpointRequestMs >= result.timing.endpointStartupMs!);
+  assert.ok(result.timing.readyToResponseMs !== null);
+  assert.equal(result.timing.endpointTier, "light");
+});
+
+test("does not wait for a slow readiness probe before returning a model response", async () => {
+  configureRunPod({ mainId: "main-endpoint", lightId: "light-endpoint" });
+  const llm = await loadLlm();
+  let healthProbeFinished = false;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/openai/v1/models")) {
+      return jsonResponse({ data: [{ id: "qwen/qwen3.5-9b" }] });
+    }
+    if (url.endsWith("/health")) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      healthProbeFinished = true;
+      return jsonResponse({ workers: { ready: 1 } });
+    }
+    if (url.endsWith("/openai/v1/chat/completions")) {
+      return jsonResponse({ choices: [{ message: { content: "CV read" } }] });
+    }
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  const result = await llm.chat("light", "system", "Read this CV.", { measureEndpointStartup: true });
+
+  assert.equal(result.content, "CV read");
+  assert.equal(healthProbeFinished, false);
+});
+
 test("reports a timed-out health probe", async () => {
   configureRunPod({ mainId: "main-endpoint" });
   const llm = await loadLlm();
@@ -209,7 +264,8 @@ test("accepts the lowercase served model ID and sends it in chat requests", asyn
   };
 
   const result = await llm.chat("main", "system prompt", "user prompt");
-  assert.deepEqual(result, { content: "A useful answer.", model: "qwen/qwen3.5-27b" });
+  assert.equal(result.content, "A useful answer.");
+  assert.equal(result.model, "qwen/qwen3.5-27b");
   assert.equal(chatPayload?.model, "qwen/qwen3.5-27b");
 });
 
@@ -247,7 +303,8 @@ for (const dedicatedLight of [false, true]) {
 
     const result = await llm.chat("light", "system prompt", "user prompt");
 
-    assert.deepEqual(result, { content: "A light-tier answer.", model });
+    assert.equal(result.content, "A light-tier answer.");
+    assert.equal(result.model, model);
     assert.deepEqual(calls, [`${baseUrl}/models`, `${baseUrl}/chat/completions`]);
   });
 }

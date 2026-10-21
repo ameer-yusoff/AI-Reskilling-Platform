@@ -1,5 +1,6 @@
 // RunPod Serverless vLLM client (OpenAI-compatible). Only called on demand.
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 export class AiNotConnectedError extends Error {}
 export class AiTimeoutError extends Error {}
@@ -7,6 +8,16 @@ export class AiVisionUnsupportedError extends Error {}
 
 type Tier = "main" | "light";
 export type ChatImage = { mediaType: "image/png" | "image/jpeg" | "image/webp"; base64: string };
+export type ChatTiming = {
+  endpointTier: Tier;
+  modelResolutionMs: number;
+  endpointRequestMs: number;
+  endpointWarmBeforeRequest: boolean | null;
+  endpointStartupMs: number | null;
+  readyToResponseMs: number | null;
+};
+type ChatOptions = { measureEndpointStartup?: boolean };
+type ChatResult = { content: string; model: string; timing: ChatTiming };
 
 /** Accepts a bare endpoint ID or a pasted URL such as https://api.runpod.ai/v2/<id>/run. */
 function endpointId(raw: string | undefined): string | undefined {
@@ -95,28 +106,29 @@ async function resolveModel(endpoint: string, configured: string, apiKey: string
   return configured;
 }
 
-export async function chat(tier: Tier, system: string, user: string): Promise<{ content: string; model: string }> {
-  return chatRequest(tier, system, user);
+export async function chat(tier: Tier, system: string, user: string, options?: ChatOptions): Promise<ChatResult> {
+  return chatRequest(tier, system, user, undefined, options);
 }
 
-export async function chatWithImage(tier: Tier, system: string, user: string, image: ChatImage): Promise<{ content: string; model: string }> {
-  return chatWithImages(tier, system, user, [image]);
+export async function chatWithImage(tier: Tier, system: string, user: string, image: ChatImage, options?: ChatOptions): Promise<ChatResult> {
+  return chatWithImages(tier, system, user, [image], options);
 }
 
-export async function chatWithImages(tier: Tier, system: string, user: string, images: ChatImage[]): Promise<{ content: string; model: string }> {
+export async function chatWithImages(tier: Tier, system: string, user: string, images: ChatImage[], options?: ChatOptions): Promise<ChatResult> {
   if (!images.length) throw new Error("At least one image is required.");
-  return chatRequest(tier, system, user, images);
+  return chatRequest(tier, system, user, images, options);
 }
 
-async function chatRequest(tier: Tier, system: string, user: string, images?: ChatImage[]): Promise<{ content: string; model: string }> {
+async function chatRequest(tier: Tier, system: string, user: string, images?: ChatImage[], options?: ChatOptions): Promise<ChatResult> {
   const requestKey = createHash("sha256")
     .update(tier).update("\0").update(system).update("\0").update(user).update("\0")
     .update(images?.map((image) => `${image.mediaType}\0${createHash("sha256").update(image.base64).digest("hex")}`).join("\0") ?? "")
+    .update(options?.measureEndpointStartup ? "\0measure-startup" : "")
     .digest("hex");
   const inFlight = pendingChats.get(requestKey);
   if (inFlight) return inFlight;
 
-  const request = generateChat(tier, system, user, images);
+  const request = generateChat(tier, system, user, images, options);
   pendingChats.set(requestKey, request);
   try {
     return await request;
@@ -125,14 +137,63 @@ async function chatRequest(tier: Tier, system: string, user: string, images?: Ch
   }
 }
 
-const pendingChats = new Map<string, Promise<{ content: string; model: string }>>();
+const pendingChats = new Map<string, Promise<ChatResult>>();
 
-async function generateChat(tier: Tier, system: string, user: string, images?: ChatImage[]): Promise<{ content: string; model: string }> {
+async function readyWorkerCount(endpoint: string, apiKey: string): Promise<number | null> {
+  try {
+    const response = await fetch(`https://api.runpod.ai/v2/${endpoint}/health`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(2_500),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { workers?: Record<string, number> };
+    const workers = body.workers;
+    if (!workers || !Number.isFinite(workers["ready"])) return null;
+    const runningWorkers = Number.isFinite(workers["running"]) ? workers["running"]! : 0;
+    return workers["ready"]! + runningWorkers;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForEndpointStartup(
+  endpoint: string,
+  apiKey: string,
+  startedAt: number,
+  requestSettled: () => boolean,
+): Promise<number | null> {
+  const deadline = startedAt + 290_000;
+  while (!requestSettled() && performance.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    if (requestSettled()) return null;
+    const activeWorkers = await readyWorkerCount(endpoint, apiKey);
+    if (activeWorkers !== null && activeWorkers > 0) return Math.round(performance.now() - startedAt);
+  }
+  return null;
+}
+
+async function generateChat(tier: Tier, system: string, user: string, images?: ChatImage[], options?: ChatOptions): Promise<ChatResult> {
   const c = cfg();
   if (!c.apiKey || !c.mainId) throw new AiNotConnectedError("AI engine not connected");
   const useLight = tier === "light" && !!c.lightId;
   const endpoint = useLight ? c.lightId! : c.mainId;
+  const modelResolutionStartedAt = performance.now();
   const model = await resolveModel(endpoint, useLight ? c.lightModel : c.mainModel, c.apiKey);
+  const modelResolutionMs = Math.round(performance.now() - modelResolutionStartedAt);
+  const requestStartedAt = performance.now();
+  let requestSettled = false;
+  let markRequestSettled!: () => void;
+  const requestSettledPromise = new Promise<void>((resolve) => { markRequestSettled = resolve; });
+  const readinessProbe = options?.measureEndpointStartup
+    ? readyWorkerCount(endpoint, c.apiKey)
+    : Promise.resolve(null);
+  const startupMeasurement = (async () => {
+    const initialReadyWorkers = await readinessProbe;
+    if (initialReadyWorkers === 0 && !requestSettled) {
+      return waitForEndpointStartup(endpoint, c.apiKey!, requestStartedAt, () => requestSettled);
+    }
+    return initialReadyWorkers === null ? null : 0;
+  })();
   let res: Response;
   try {
   res = await fetch(`https://api.runpod.ai/v2/${endpoint}/openai/v1/chat/completions`, {
@@ -161,7 +222,11 @@ async function generateChat(tier: Tier, system: string, user: string, images?: C
     }),
     signal: AbortSignal.timeout(290_000),
   });
+  requestSettled = true;
+  markRequestSettled();
   } catch (err) {
+    requestSettled = true;
+    markRequestSettled();
     if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) throw new AiTimeoutError("RunPod request timed out");
     throw err;
   }
@@ -172,9 +237,27 @@ async function generateChat(tier: Tier, system: string, user: string, images?: C
     throw new Error(`RunPod request failed with HTTP ${res.status}.`);
   }
   const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  requestSettled = true;
+  markRequestSettled();
   const content = (json.choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   if (!content) throw new Error("RunPod returned an empty response");
-  return { content, model };
+  const endpointRequestMs = Math.round(performance.now() - requestStartedAt);
+  const [initialReadyWorkers, endpointStartupMs] = await Promise.all([
+    Promise.race([readinessProbe, requestSettledPromise.then(() => null)]),
+    Promise.race([startupMeasurement, requestSettledPromise.then(() => null)]),
+  ]);
+  return {
+    content,
+    model,
+    timing: {
+      endpointTier: tier,
+      modelResolutionMs,
+      endpointRequestMs,
+      endpointWarmBeforeRequest: initialReadyWorkers === null ? null : initialReadyWorkers > 0,
+      endpointStartupMs,
+      readyToResponseMs: endpointStartupMs === null ? null : Math.max(0, endpointRequestMs - endpointStartupMs),
+    },
+  };
 }
 
 

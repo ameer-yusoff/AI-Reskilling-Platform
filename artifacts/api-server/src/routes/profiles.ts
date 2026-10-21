@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { performance } from "node:perf_hooks";
 import { db, profilesTable, plansTable, insightsTable, rolesTable, type StoredProfileSkill } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import {
@@ -145,6 +146,7 @@ router.post("/profiles/:id/cv", async (req, res) => {
   if (!body.consent) { res.status(400).json({ error: "cv_consent_required" }); return; }
   let text: string | null = null;
   let pages: CvDocumentPage[] | undefined;
+  const documentProcessingStartedAt = performance.now();
   try {
     if (isCvImageFile(body.fileName)) {
       pages = [{ pageNumber: 1, text: "", image: validateCvImage(body.fileName, body.contentBase64) }];
@@ -154,6 +156,10 @@ router.post("/profiles/:id/cv", async (req, res) => {
       else text = document.text;
     }
   } catch (err) {
+    req.log.info(
+      { profileId: id, documentProcessingMs: Math.round(performance.now() - documentProcessingStartedAt) },
+      "CV document processing timing",
+    );
     if (err instanceof CvError) {
       res.status(400).json({ error: err.message });
       return;
@@ -162,6 +168,7 @@ router.post("/profiles/:id/cv", async (req, res) => {
     res.status(400).json({ error: "cv_unreadable" });
     return;
   }
+  const documentProcessingMs = Math.round(performance.now() - documentProcessingStartedAt);
   const lang = body.lang ?? "en";
   const images = pages?.flatMap((page) => page.image ? [page.image] : []) ?? [];
   // Include every PDF page's extracted text so mixed text/scanned PDFs cannot
@@ -174,9 +181,24 @@ router.post("/profiles/:id/cv", async (req, res) => {
   if (!rate.allowed) { res.setHeader("Retry-After", String(rate.retryAfterSeconds)); res.status(429).json({ error: "ai_rate_limited", retryAfterSeconds: rate.retryAfterSeconds }); return; }
   const work = (async () => {
     const multimodal = images.length > 0;
+    const cvModelStageStartedAt = performance.now();
     const result = multimodal
       ? await extractCvMultimodalProfile(pages!, lang)
       : await extractCvProfile(text!, lang);
+    const cvModelStageMs = Math.round(performance.now() - cvModelStageStartedAt);
+    req.log.info({
+      profileId: id,
+      documentProcessingMs,
+      cvModelStageMs,
+      pageCount: pages?.length ?? 0,
+      scannedPageCount: images.length,
+      endpointTier: result.timing.endpointTier,
+      modelResolutionMs: result.timing.modelResolutionMs,
+      endpointRequestMs: result.timing.endpointRequestMs,
+      endpointWarmBeforeRequest: result.timing.endpointWarmBeforeRequest,
+      endpointStartupMs: result.timing.endpointStartupMs,
+      readyToResponseMs: result.timing.readyToResponseMs,
+    }, "CV upload timing");
     const cvText = multimodal ? (result as Awaited<ReturnType<typeof extractCvMultimodalProfile>>).text : text!;
     const allSkills = await loadSkills();
     const extracted = extractSkills(cvText, allSkills);
