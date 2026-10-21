@@ -4,15 +4,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, Legend, ResponsiveContainer, Tooltip } from "recharts";
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle2, ExternalLink, FileUp, Flag, Loader2, Pencil, Plus, RotateCw, Search, Trash2, X,
+  AlertTriangle,
 } from "lucide-react";
 import {
   useDeleteProfile, useGetProfile, useGetProfileMatches, useGetProfilePlan, useCreateProfilePlan, useListRiasecQuestions, useListRoles,
   useListCourses, useSubmitRiasec, useUpdateProfile, useUploadCv, useGetRole, useGetMarketOverview,
   getGetProfileQueryKey, getGetProfileMatchesQueryKey, getGetProfilePlanQueryKey, getGetRoleQueryKey, getGetMarketOverviewQueryKey, getListCoursesQueryKey,
-  type Profile, type RoleMatch, type SkillStatus, type Plan,
+  type CvUpload, type Profile, type RoleMatch, type SkillStatus, type Plan,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { CV_MAX_BYTES, CV_OK } from "@/lib/onboarding";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   CostBadge, DataStamp, Empty, ErrorBox, ExplainNote, GuestBanner, HrdcBadge, Meter, Panel, Rows, SdgBadge, SegTag, SkillBadge, StatusTag, catIcon,
@@ -140,6 +143,7 @@ function Intake({ p }: { p: Profile }) {
         <CvPanel p={p} />
         <AgentCard profile={p} agent="cv" />
       </div>
+      <SavedReviewPanel p={p} />
       <SkillsPanel p={p} />
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <RiasecPanel p={p} />
@@ -149,12 +153,58 @@ function Intake({ p }: { p: Profile }) {
   );
 }
 
-function CvPanel({ p }: { p: Profile }) {
+const normEv = (v: string | null | undefined) => (v ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+/** Same rule as the onboarding review: supported only with a real quote that still matches the saved value. */
+function evLabel(p: Profile, field: string, current: string): "supported" | "self" | "none" {
+  const real = (p.cvEvidence ?? []).filter((e) => e.field === field && e.source !== "no_evidence" && !!e.quote);
+  if (!real.length) return "none";
+  return real.some((e) => normEv(e.value) === normEv(current) && normEv(current) !== "") ? "supported" : "self";
+}
+
+/** Read-only summary of the saved CV review (education, experience, HRD Corp, evidence). */
+function SavedReviewPanel({ p }: { p: Profile }) {
   const { t } = useT();
+  const hrdc = p.hrdcEligibilityStatus ?? null;
+  const fields = [
+    { key: "currentRole", label: "ob.review.role", v: p.currentRole },
+    { key: "organization", label: "ob.review.org", v: p.organization },
+    { key: "education", label: "ob.review.edu", v: p.education },
+    { key: "experience", label: "ob.review.exp", v: p.experience },
+  ] as const;
+  const tone = { supported: "bg-[hsl(var(--gold-soft))] text-foreground", self: "bg-[hsl(var(--maroon-soft))] text-primary", none: "bg-muted text-muted-foreground" };
+  return (
+    <Panel title={t("ob.saved.title")} meta={t("ob.saved.sub")}
+      actions={<span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", p.verified ? "bg-[hsl(var(--gold-soft))]" : "bg-destructive/10 text-destructive")} data-testid="text-review-verified">{p.verified ? t("ob.saved.verified") : t("ob.saved.unverified")}</span>}>
+      <dl className="grid gap-3 text-sm md:grid-cols-2" data-testid="panel-saved-review">
+        {fields.map((x) => {
+          const val = x.v ?? "";
+          const ev = evLabel(p, x.key, val);
+          const quote = (p.cvEvidence ?? []).find((e) => e.field === x.key && e.source !== "no_evidence" && !!e.quote)?.quote;
+          return (
+            <div key={x.key} className="min-w-0 rounded-xl bg-muted/40 p-3">
+              <dt className="flex items-center justify-between gap-2 text-xs text-muted-foreground">{t(x.label)}<span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", tone[ev])}>{t(ev === "supported" ? "ob.ev.supported" : ev === "self" ? "ob.ev.self" : "ob.ev.none")}</span></dt>
+              <dd className="mt-1 whitespace-pre-line break-words font-medium">{val || <span className="text-muted-foreground">{t("ob.saved.empty")}</span>}</dd>
+              {quote && <blockquote className="mt-1.5 border-l-2 border-accent pl-2 text-[11px] italic text-muted-foreground">{quote}</blockquote>}
+            </div>
+          );
+        })}
+        <div className="rounded-xl bg-muted/40 p-3">
+          <dt className="text-xs text-muted-foreground">{t("ob.review.hrdc")}</dt>
+          <dd className="mt-1 font-medium" data-testid="text-hrdc-status">{hrdc === "yes" ? t("ob.review.hrdcYes") : hrdc === "no" ? t("ob.review.hrdcNo") : hrdc === "unknown" ? t("ob.review.hrdcUnknown") : <span className="text-muted-foreground">{t("ob.saved.empty")}</span>}</dd>
+          {hrdc === "unknown" && <p className="mt-1 text-[11px] text-muted-foreground">{t("ob.review.hrdcUnknownNote")}</p>}
+        </div>
+      </dl>
+    </Panel>
+  );
+}
+
+function CvPanel({ p }: { p: Profile }) {
+  const { t, lang } = useT();
   const et = useErrText();
   const f = useFmt();
   const ref = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
+  const [consent, setConsent] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const refresh = useRefreshProfile(p.id);
@@ -169,19 +219,24 @@ function CvPanel({ p }: { p: Profile }) {
   });
   const handle = (file?: File | null) => {
     if (!file) return;
-    if (!/\.(pdf|docx|txt)$/i.test(file.name)) { toast({ title: t("cv.badType"), variant: "destructive" }); return; }
+    if (!CV_OK.test(file.name)) { toast({ title: t("ob.cv.badType"), variant: "destructive" }); return; }
+    if (file.size > CV_MAX_BYTES) { toast({ title: t("ob.cv.tooBig"), variant: "destructive" }); return; }
+    if (!consent) { toast({ title: t("ob.cv.consentNeeded"), variant: "destructive" }); return; }
     const r = new FileReader();
-    r.onload = () => { const s = String(r.result); up.mutate({ id: p.id, data: { fileName: file.name, contentBase64: s.slice(s.indexOf(",") + 1) } }); };
+    r.onload = () => { const s = String(r.result); up.mutate({ id: p.id, data: { fileName: file.name, contentBase64: s.slice(s.indexOf(",") + 1), consent: true, lang } as CvUpload }); };
     r.readAsDataURL(file);
   };
   return (
     <Panel title={t("cv.title")} meta={t("cv.meta")}>
-      <button type="button" onClick={() => ref.current?.click()} disabled={up.isPending} data-testid="button-upload-cv"
+      <label className="mb-3 flex cursor-pointer items-start gap-2.5 rounded-xl border border-border bg-background p-3 text-xs leading-relaxed">
+        <Checkbox checked={consent} onCheckedChange={(v) => setConsent(v === true)} className="mt-0.5" data-testid="checkbox-cv-consent" /><span>{t("ob.cv.consent")}</span>
+      </label>
+      <button type="button" onClick={() => (consent ? ref.current?.click() : toast({ title: t("ob.cv.consentNeeded"), variant: "destructive" }))} disabled={up.isPending} data-testid="button-upload-cv"
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={(e) => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files[0]); }}
         className={cn("dotgrid flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-8 text-center transition-colors", drag ? "border-primary bg-[hsl(var(--maroon-soft))]" : "border-border hover:border-primary")}>
         {up.isPending ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : p.cvFileName ? <CheckCircle2 className="h-8 w-8 text-accent" /> : <FileUp className="h-8 w-8 text-primary" />}
         <div className="mt-2 max-w-full truncate whitespace-nowrap text-sm font-semibold">{up.isPending ? t("cv.reading") : p.cvFileName ? t("cv.replace") : t("cv.drop")}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">{t("cv.formats")}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{t("ob.cv.formats")}</div>
       </button>
       <input ref={ref} type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={(e) => { handle(e.target.files?.[0]); e.target.value = ""; }} data-testid="input-cv-file" />
       {p.cvFileName && (
@@ -442,7 +497,7 @@ function Matcher({ p, base }: { p: Profile; base: string }) {
       refresh(np);
       const pl = await plan.mutateAsync({ id: p.id, data: { roleId } });
       qc.setQueryData(getGetProfilePlanQueryKey(p.id), pl);
-      toast({ title: t("pathway.built", { n: pl.items.length, w: pl.totalWeeks }) });
+      toast({ title: (pl.totalWeeks == null ? t("ob.plan.builtNoTotals", { n: pl.items.length }) : t("pathway.built", { n: pl.items.length, w: pl.totalWeeks })) });
       nav(`${base}/${p.id}/pathway`);
     } catch (e) {
       toast({ title: t("err.generic"), description: et(e), variant: "destructive" });
@@ -471,7 +526,6 @@ function Matcher({ p, base }: { p: Profile; base: string }) {
               <Link href={`/roles/${x.role.id}`} title={title} className="mt-3 truncate whitespace-nowrap text-base font-bold hover:text-primary">{title}</Link>
               <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span className="truncate whitespace-nowrap">{tk("sector", x.role.sector)}</span><span>·</span><span>SOC {x.role.socCode}</span>
-                {x.role.myColCritical && <span className="rounded-full bg-primary px-1.5 py-0.5 font-semibold text-primary-foreground">MyCOL</span>}
                 {target && <span className="inline-flex items-center gap-0.5 font-semibold text-primary"><Flag className="h-3 w-3" />{t("matcher.target")}</span>}
               </div>
 
@@ -491,7 +545,7 @@ function Matcher({ p, base }: { p: Profile; base: string }) {
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-[11px]">
-                <div className="min-w-0"><div className="truncate whitespace-nowrap text-muted-foreground" title={t("matcher.marketSignal")}>{t("matcher.marketSignal")}</div><Meter value={x.marketDemand} max={100} tone="gold" label={String(Math.round(x.marketDemand))} /></div>
+                <div className="min-w-0"><div className="truncate whitespace-nowrap text-muted-foreground" title={t("matcher.marketSignal")}>{t("matcher.marketSignal")}</div>{x.marketDemand == null ? <div className="text-xs font-medium text-muted-foreground" data-testid={`text-demand-unverified-${x.role.id}`}>{t("ob.demandUnverified")}</div> : <Meter value={x.marketDemand} max={100} tone="gold" label={String(Math.round(x.marketDemand))} />}</div>
                 <div className="min-w-0"><div className="truncate whitespace-nowrap text-muted-foreground" title={t("matcher.exposure")}>{t("matcher.exposure")}</div><Meter value={x.role.aiExposure} tone="slate" label={f.frac(x.role.aiExposure, 0)} /></div>
               </div>
 
@@ -523,7 +577,7 @@ function Pathway({ p, base }: { p: Profile; base: string }) {
   const q = useGetProfilePlan(p.id, { query: { queryKey: getGetProfilePlanQueryKey(p.id), retry: false } });
   const rebuild = useCreateProfilePlan({
     mutation: {
-      onSuccess: (pl) => { qc.setQueryData(getGetProfilePlanQueryKey(p.id), pl); qc.invalidateQueries({ queryKey: ["/api/dashboard/summary"] }); toast({ title: t("pathway.built", { n: pl.items.length, w: pl.totalWeeks }), description: !user ? t("guest.milestone") : undefined }); },
+      onSuccess: (pl) => { qc.setQueryData(getGetProfilePlanQueryKey(p.id), pl); qc.invalidateQueries({ queryKey: ["/api/dashboard/summary"] }); toast({ title: (pl.totalWeeks == null ? t("ob.plan.builtNoTotals", { n: pl.items.length }) : t("pathway.built", { n: pl.items.length, w: pl.totalWeeks })), description: !user ? t("guest.milestone") : undefined }); },
       onError: (e) => toast({ title: t("err.generic"), description: et(e), variant: "destructive" }),
     },
   });
@@ -555,18 +609,24 @@ function Pathway({ p, base }: { p: Profile; base: string }) {
 function PlanView({ pl, onRebuild, rebuilding }: { pl: Plan; onRebuild: () => void; rebuilding: boolean }) {
   const { t, tk } = useT();
   const f = useFmt();
-  const weeks = Math.max(pl.totalWeeks, 1, ...pl.items.map((i) => i.startWeek - 1 + i.durationWeeks));
+  const weeks = Math.max(pl.totalWeeks ?? 1, 1, ...pl.items.map((i) => i.startWeek - 1 + i.durationWeeks));
   const ticks = Array.from(new Set([1, Math.ceil(weeks / 4), Math.ceil(weeks / 2), Math.ceil((3 * weeks) / 4), weeks])).filter((w) => w >= 1);
   return (
     <>
+      {pl.verificationStatus === "unverified" && (
+        <div role="alert" className="mb-3 flex gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm" data-testid="alert-plan-unverified">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div><div className="font-semibold">{t("ob.plan.unverifiedTitle")}</div><p className="text-muted-foreground">{t("ob.plan.unverifiedBody")}</p></div>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="col-span-2 min-w-0 rounded-2xl bg-primary p-4 text-primary-foreground">
           <div className="text-xs text-primary-foreground/70">{t("pathway.target")}</div>
           <div title={pl.roleTitle} className="mt-1 truncate whitespace-nowrap text-lg font-bold">{pl.roleTitle}</div>
           <div className="mt-1 text-[11px] text-primary-foreground/70">{t("pathway.created", { d: f.date(pl.createdAt) })}</div>
         </div>
-        <div className="rounded-2xl border border-card-border bg-card p-4"><div className="text-xs text-muted-foreground">{t("pathway.duration")}</div><div className="tnum mt-1 text-2xl font-bold">{t("common.weeks", { n: pl.totalWeeks })}</div></div>
-        <div className="rounded-2xl border border-card-border bg-card p-4"><div className="text-xs text-muted-foreground">{t("pathway.cost")}</div><div className="tnum mt-1 text-2xl font-bold text-accent">{pl.totalCostMyr === 0 ? t("cost.free") : f.myr(pl.totalCostMyr)}</div></div>
+        <div className="rounded-2xl border border-card-border bg-card p-4"><div className="text-xs text-muted-foreground">{t("pathway.duration")}</div><div className="tnum mt-1 text-2xl font-bold">{pl.totalWeeks == null ? <span className="text-base">{t("ob.plan.notVerified")}</span> : t("common.weeks", { n: pl.totalWeeks })}</div></div>
+        <div className="rounded-2xl border border-card-border bg-card p-4"><div className="text-xs text-muted-foreground">{t("pathway.cost")}</div><div className="tnum mt-1 text-2xl font-bold text-accent">{pl.totalCostMyr == null ? <span className="text-base text-muted-foreground">{t("ob.plan.notVerified")}</span> : f.myr(pl.totalCostMyr)}</div></div>
       </div>
       <Panel title={t("pathway.timeline", { n: pl.items.length })} meta={t("pathway.hrdcNote")}
         actions={<Button variant="outline" className="min-h-11" disabled={rebuilding} onClick={onRebuild} data-testid="button-rebuild">{rebuilding ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}<span className="ml-1.5 hidden sm:inline">{t("pathway.rebuild")}</span></Button>}>
@@ -585,8 +645,8 @@ function PlanView({ pl, onRebuild, rebuilding }: { pl: Plan; onRebuild: () => vo
                   </div>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span className="truncate whitespace-nowrap">{it.provider}</span>
-                    <span className="tnum font-semibold text-foreground">{it.costMyr === 0 ? t("cost.free") : f.myr(it.costMyr)}</span>
-                    <CostBadge type={it.costMyr === 0 ? "free" : it.costMyr <= 200 ? "low_cost" : "paid"} />
+                    <span className="tnum font-semibold text-foreground">{it.costMyr === 0 ? t("ob.plan.priceUnverified") : f.myr(it.costMyr)}</span>
+                    {it.costMyr > 0 && <CostBadge type={it.costMyr <= 200 ? "low_cost" : "paid"} />}
                     <HrdcBadge status={it.hrdcStatus} />
                   </div>
                   {it.sdgTargets.length > 0 && <div className="mt-1.5 flex flex-wrap gap-1">{it.sdgTargets.map((s) => <SdgBadge key={s.code} code={s.code} title={`${s.code} ${s.title}`} />)}</div>}

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { getGetMeQueryKey, logout as apiLogout, useGetMe, type AuthSession, type AuthUser } from "@workspace/api-client-react";
 import { setActiveProfile } from "@/lib/fmt";
+import { clearAllOb } from "@/lib/onboarding";
 
 const TOKEN = "skilytics.token";
 
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { await apiLogout(); } catch { /* token may already be invalid */ }
     localStorage.removeItem(TOKEN);
     setActiveProfile(null);
+    clearAllOb();
     qc.clear();
     qc.setQueryData(meKey, null);
     nav("/");

@@ -75,7 +75,50 @@ export interface ProfileSkill {
   evidence?: string | null;
 }
 
+export interface InterestAnswer {
+  /** @minimum 1 */
+  questionId: number;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  value: number;
+}
+
+export interface CvEvidence {
+  field: string;
+  value: string;
+  /** @nullable */
+  quote: string | null;
+  source: string;
+}
+
+/**
+ * @nullable
+ */
+export type ProfileHrdcEligibilityStatus = typeof ProfileHrdcEligibilityStatus[keyof typeof ProfileHrdcEligibilityStatus] | null;
+
+
+export const ProfileHrdcEligibilityStatus = {
+  yes: 'yes',
+  no: 'no',
+  unknown: 'unknown',
+} as const;
+
 export interface Profile {
+  /** @nullable */
+  hrdcEligibilityStatus?: ProfileHrdcEligibilityStatus;
+  /** @nullable */
+  education?: string | null;
+  /** @nullable */
+  experience?: string | null;
+  /** @nullable */
+  cvExtractionKey?: string | null;
+  /** @nullable */
+  onboardingStep?: string | null;
+  verified?: boolean;
+  cvEvidence?: CvEvidence[];
+  riasecAnswers?: InterestAnswer[];
   id: number;
   name: string;
   segment: Segment;
@@ -127,7 +170,38 @@ export interface SkillConfirmation {
   status: SkillStatus;
 }
 
+export type ProfileUpdateHrdcEligibilityStatus = typeof ProfileUpdateHrdcEligibilityStatus[keyof typeof ProfileUpdateHrdcEligibilityStatus];
+
+
+export const ProfileUpdateHrdcEligibilityStatus = {
+  yes: 'yes',
+  no: 'no',
+  unknown: 'unknown',
+} as const;
+
+export type ProfileUpdateOnboardingStep = typeof ProfileUpdateOnboardingStep[keyof typeof ProfileUpdateOnboardingStep];
+
+
+export const ProfileUpdateOnboardingStep = {
+  status: 'status',
+  cv: 'cv',
+  review: 'review',
+  holland: 'holland',
+  results: 'results',
+  save: 'save',
+  complete: 'complete',
+} as const;
+
 export interface ProfileUpdate {
+  hrdcEligibilityStatus?: ProfileUpdateHrdcEligibilityStatus;
+  /** @maxLength 6000 */
+  education?: string;
+  /** @maxLength 6000 */
+  experience?: string;
+  onboardingStep?: ProfileUpdateOnboardingStep;
+  verified?: boolean;
+  /** @maxItems 30 */
+  riasecAnswers?: InterestAnswer[];
   /** @minLength 1 */
   name?: string;
   segment?: Segment;
@@ -148,7 +222,18 @@ export interface ProfileUpdate {
   removeSkillIds?: number[];
 }
 
+export type Lang = typeof Lang[keyof typeof Lang];
+
+
+export const Lang = {
+  en: 'en',
+  ms: 'ms',
+  zh: 'zh',
+} as const;
+
 export interface CvUpload {
+  consent: boolean;
+  lang?: Lang;
   fileName: string;
   contentBase64: string;
 }
@@ -200,7 +285,23 @@ export interface RoleSkill {
   importance: number;
 }
 
+export type RoleMyColStatus = typeof RoleMyColStatus[keyof typeof RoleMyColStatus];
+
+
+export const RoleMyColStatus = {
+  unverified: 'unverified',
+} as const;
+
 export interface Role {
+  /** @nullable */
+  sourceUrl?: string | null;
+  /** @nullable */
+  sourceVersion?: string | null;
+  /** @nullable */
+  officialTitle?: string | null;
+  /** @nullable */
+  sourceFetchedAt?: string | null;
+  myColStatus?: RoleMyColStatus;
   id: number;
   socCode: string;
   title: string;
@@ -237,8 +338,11 @@ export interface RoleMatch {
   breakdown: MatchBreakdown;
   matchedSkills: RoleSkill[];
   gapSkills: RoleSkill[];
-  /** 0-100 market signal, separate from personal fit */
-  marketDemand: number;
+  /**
+     * Unavailable until a verified Malaysian demand series is configured; AI exposure is not demand.
+     * @nullable
+     */
+  marketDemand: number | null;
 }
 
 export interface Course {
@@ -276,13 +380,23 @@ export interface PlanItem {
   sdgTargets: SdgTarget[];
 }
 
+export type PlanVerificationStatus = typeof PlanVerificationStatus[keyof typeof PlanVerificationStatus];
+
+
+export const PlanVerificationStatus = {
+  unverified: 'unverified',
+} as const;
+
 export interface Plan {
+  verificationStatus?: PlanVerificationStatus;
   id: number;
   profileId: number;
   roleId: number;
   roleTitle: string;
-  totalWeeks: number;
-  totalCostMyr: number;
+  /** @nullable */
+  totalWeeks: number | null;
+  /** @nullable */
+  totalCostMyr: number | null;
   uncoveredSkills: string[];
   items: PlanItem[];
   createdAt: string;
@@ -299,15 +413,6 @@ export interface SourceRef {
   /** @nullable */
   dataDate?: string | null;
 }
-
-export type Lang = typeof Lang[keyof typeof Lang];
-
-
-export const Lang = {
-  en: 'en',
-  ms: 'ms',
-  zh: 'zh',
-} as const;
 
 export interface AgentInsight {
   id: number;
@@ -388,6 +493,9 @@ export const MarketSourceStatus = {
 } as const;
 
 export interface MarketSource {
+  /** @nullable */
+  version?: string | null;
+  stale?: boolean;
   id: string;
   name: string;
   kind: MarketSourceKind;

@@ -108,22 +108,24 @@ export function requireRole(...roles: Role[]): RequestHandler {
 /** Moves guest-owned profiles and predictions to a registered individual. */
 export async function claimGuestData(userId: number, guestToken: string | undefined): Promise<number> {
   if (!guestToken) return 0;
-  const moved = await db
+  return db.transaction(async (tx) => {
+  const moved = await tx
     .update(profilesTable)
     .set({ ownerUserId: userId, guestToken: null })
     .where(and(eq(profilesTable.guestToken, guestToken), isNull(profilesTable.ownerUserId)))
     .returning({ id: profilesTable.id });
-  await db
+  await tx
     .update(predictionsTable)
     .set({ ownerUserId: userId, guestToken: null })
     .where(and(eq(predictionsTable.guestToken, guestToken), isNull(predictionsTable.ownerUserId)));
   return moved.length;
+  });
 }
 
 export const DEMO_PASSWORD = "Demo@2026";
 export const DEMO_ACCOUNTS = [
-  { email: "hr@skilytics.demo", name: "Demo HR", role: "hr" as const, organization: "Syarikat Demo Sdn Bhd" },
-  { email: "tvet@skilytics.demo", name: "Demo TVET", role: "tvet" as const, organization: "Kolej Vokasional Demo" },
+  { email: "hr@skilytics.demo", name: "Demo Employee", role: "hr" as const, organization: "Syarikat Demo Sdn Bhd" },
+  { email: "tvet@skilytics.demo", name: "Demo Educators", role: "tvet" as const, organization: "Kolej Vokasional Demo" },
 ];
 
 export async function seedDemoAccounts(): Promise<void> {

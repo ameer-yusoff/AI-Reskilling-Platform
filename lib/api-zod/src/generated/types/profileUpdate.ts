@@ -5,10 +5,22 @@
  * Skilytics API
  * OpenAPI spec version: 0.1.0
  */
+import type { InterestAnswer } from './interestAnswer';
+import type { ProfileUpdateHrdcEligibilityStatus } from './profileUpdateHrdcEligibilityStatus';
+import type { ProfileUpdateOnboardingStep } from './profileUpdateOnboardingStep';
 import type { Segment } from './segment';
 import type { SkillConfirmation } from './skillConfirmation';
 
 export interface ProfileUpdate {
+  hrdcEligibilityStatus?: ProfileUpdateHrdcEligibilityStatus;
+  /** @maxLength 6000 */
+  education?: string;
+  /** @maxLength 6000 */
+  experience?: string;
+  onboardingStep?: ProfileUpdateOnboardingStep;
+  verified?: boolean;
+  /** @maxItems 30 */
+  riasecAnswers?: InterestAnswer[];
   /** @minLength 1 */
   name?: string;
   segment?: Segment;

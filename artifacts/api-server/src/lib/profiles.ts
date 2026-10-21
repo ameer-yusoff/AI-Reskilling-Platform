@@ -1,4 +1,4 @@
-import { db, profilesTable, plansTable, type SkillRow } from "@workspace/db";
+import { db, profilesTable, plansTable, usersTable, type SkillRow } from "@workspace/db";
 import { and, eq, desc, isNull, sql, type SQL } from "drizzle-orm";
 import type { Request } from "express";
 import { SDG_TARGETS } from "../data/courses";
@@ -28,7 +28,15 @@ export function profileToApi(p: ProfileRow, skills: SkillRow[]) {
     weeklyHours: p.weeklyHours,
     budgetMyr: p.budgetMyr,
     hrdcEligible: p.hrdcEligible,
+    hrdcEligibilityStatus: p.hrdcEligibilityStatus,
     cvFileName: p.cvFileName,
+    education: p.education,
+    experience: p.experience,
+    cvEvidence: p.cvEvidence,
+    cvExtractionKey: p.cvExtractionKey,
+    onboardingStep: p.onboardingStep,
+    verified: p.verified,
+    riasecAnswers: p.riasecAnswers,
     cvUploadedAt: p.cvUploadedAt ? p.cvUploadedAt.toISOString() : null,
     isGuest: p.ownerUserId === null && p.guestToken !== null,
     cvWordCount: p.cvText ? p.cvText.split(/\s+/).filter(Boolean).length : null,
@@ -51,10 +59,12 @@ export function planToApi(p: PlanRow) {
     profileId: p.profileId,
     roleId: p.roleId,
     roleTitle: p.roleTitle,
-    totalWeeks: p.totalWeeks,
-    totalCostMyr: p.totalCostMyr,
-    uncoveredSkills: p.uncoveredSkills,
-    items: p.items.map(({ sdgCodes, ...i }) => ({
+    totalWeeks: null,
+    totalCostMyr: null,
+    verificationStatus: "unverified" as const,
+    // Historical plans are retained, but unverified prices/durations are withheld.
+    uncoveredSkills: [...new Set([...p.uncoveredSkills, ...p.items.flatMap((i) => i.skills)])],
+    items: ([] as PlanRow["items"]).map(({ sdgCodes, ...i }) => ({
       ...i,
       sdgTargets: sdgCodes.map((c) => sdgByCode.get(c)).filter((t): t is SdgTarget => !!t),
     })),
@@ -67,7 +77,7 @@ export function planToApi(p: PlanRow) {
 export function profileScope(req: Request): SQL {
   const u = req.user;
   if (u && (u.role === "hr" || u.role === "tvet")) {
-    return u.organization ? eq(profilesTable.organization, u.organization) : sql`false`;
+    return u.organization ? sql`${profilesTable.organization} = ${u.organization} AND ${profilesTable.ownerUserId} IN (SELECT id FROM users WHERE role = ${u.role} AND organization = ${u.organization})` : sql`false`;
   }
   const own = u ? eq(profilesTable.ownerUserId, u.id) : undefined;
   const guest = req.guestToken ? and(isNull(profilesTable.ownerUserId), eq(profilesTable.guestToken, req.guestToken)) : undefined;
@@ -75,9 +85,13 @@ export function profileScope(req: Request): SQL {
   return own ?? guest ?? sql`false`;
 }
 
-export function canAccessProfile(req: Request, p: ProfileRow): boolean {
+export async function canAccessProfile(req: Request, p: ProfileRow): Promise<boolean> {
   const u = req.user;
-  if (u && (u.role === "hr" || u.role === "tvet")) return !!u.organization && p.organization === u.organization;
+  if (u && (u.role === "hr" || u.role === "tvet")) {
+    if (!u.organization || p.organization !== u.organization || !p.ownerUserId) return false;
+    const [owner] = await db.select({ role: usersTable.role, organization: usersTable.organization }).from(usersTable).where(eq(usersTable.id, p.ownerUserId));
+    return owner?.role === u.role && owner.organization === u.organization;
+  }
   if (u && p.ownerUserId === u.id) return true;
   return !!req.guestToken && p.ownerUserId === null && p.guestToken === req.guestToken;
 }

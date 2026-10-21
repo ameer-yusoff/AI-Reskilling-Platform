@@ -26,6 +26,10 @@ export const rolesTable = pgTable("roles", {
   riasecCode: text("riasec_code").notNull(),
   myColCritical: boolean("mycol_critical").notNull().default(false),
   description: text("description"),
+  sourceUrl: text("source_url"),
+  sourceVersion: text("source_version"),
+  officialTitle: text("official_title"),
+  sourceFetchedAt: text("source_fetched_at"),
 });
 
 export const roleSkillsTable = pgTable(

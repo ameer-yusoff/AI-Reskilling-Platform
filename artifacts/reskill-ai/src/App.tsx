@@ -11,6 +11,7 @@ import { AuthProvider, portalHome, useAuth } from "@/lib/auth";
 import { Landing, Login, NotFound, Register } from "@/pages/public";
 import { Outlook, Workspace } from "@/pages/me";
 import ProfileWorkspace from "@/pages/profile";
+import Onboarding from "@/pages/onboarding";
 import { Courses, RoleDetail, Roles } from "@/pages/catalog";
 import { Market, Sources, TvetMarket } from "@/pages/market";
 import { CohortDashboard, Members, Programmes } from "@/pages/cohort";
@@ -34,6 +35,7 @@ function AppRoutes() {
       <Route path="/" component={Landing} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/onboarding/:step?"><RoutedErrorBoundary><Onboarding /></RoutedErrorBoundary></Route>
       <Route>
         <Shell>
           <RoutedErrorBoundary>

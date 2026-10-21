@@ -16,6 +16,7 @@ export type StoredProfileSkill = {
 };
 
 export type StoredRiasec = { R: number; I: number; A: number; S: number; E: number; C: number };
+export type CvEvidence = { field: string; value: string; quote: string | null; source: string };
 
 export const profilesTable = pgTable("profiles", {
   id: serial("id").primaryKey(),
@@ -27,9 +28,17 @@ export const profilesTable = pgTable("profiles", {
   weeklyHours: integer("weekly_hours").notNull(),
   budgetMyr: real("budget_myr").notNull(),
   hrdcEligible: boolean("hrdc_eligible").notNull().default(false),
+  hrdcEligibilityStatus: text("hrdc_eligibility_status"),
   cvFileName: text("cv_file_name"),
   cvUploadedAt: timestamp("cv_uploaded_at", { withTimezone: true }),
   cvText: text("cv_text"),
+  education: text("education"),
+  experience: text("experience"),
+  cvEvidence: jsonb("cv_evidence").$type<CvEvidence[]>().notNull().default([]),
+  cvExtractionKey: text("cv_extraction_key"),
+  onboardingStep: text("onboarding_step"),
+  verified: boolean("verified").notNull().default(false),
+  riasecAnswers: jsonb("riasec_answers").$type<{ questionId: number; value: number }[]>().notNull().default([]),
   skills: jsonb("skills").$type<StoredProfileSkill[]>().notNull().default([]),
   riasecScores: jsonb("riasec_scores").$type<StoredRiasec | null>(),
   riasecCode: text("riasec_code"),

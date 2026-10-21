@@ -6,7 +6,7 @@ import {
   Map, Menu, School, Sparkles, Target, Users, type LucideIcon,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Brand, LangToggle } from "@/components/kit";
+import { Brand, DataNotice, LangToggle } from "@/components/kit";
 import { useAuth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/fmt";
 import { useT, type DictKey } from "@/i18n";
@@ -169,6 +169,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <motion.div key={loc} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, ease: [0.2, 0.7, 0.2, 1] }}
           className="mx-auto w-full max-w-[1280px] px-4 py-5 md:px-8 md:py-8">
           {children}
+          <DataNotice />
         </motion.div>
       </main>
 

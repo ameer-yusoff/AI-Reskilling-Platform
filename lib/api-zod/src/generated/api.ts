@@ -109,7 +109,28 @@ export const ListProfilesQueryParams = zod.object({
   "organization": zod.coerce.string().optional()
 })
 
+
+export const listProfilesResponseRiasecAnswersItemValueMax = 5;
+
+
+
 export const ListProfilesResponseItem = zod.object({
+  "hrdcEligibilityStatus": zod.union([zod.literal('yes'),zod.literal('no'),zod.literal('unknown'),zod.literal(null)]).nullish(),
+  "education": zod.string().nullish(),
+  "experience": zod.string().nullish(),
+  "cvExtractionKey": zod.string().nullish(),
+  "onboardingStep": zod.string().nullish(),
+  "verified": zod.boolean().optional(),
+  "cvEvidence": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string(),
+  "quote": zod.string().nullable(),
+  "source": zod.string()
+})).optional(),
+  "riasecAnswers": zod.array(zod.object({
+  "questionId": zod.number().int().min(1),
+  "value": zod.number().int().min(1).max(listProfilesResponseRiasecAnswersItemValueMax)
+})).optional(),
   "id": zod.number().int(),
   "name": zod.string(),
   "segment": zod.enum(['worker', 'graduate', 'employer', 'career_centre']),
@@ -162,7 +183,28 @@ export const CreateProfileBody = zod.object({
   "hrdcEligible": zod.boolean().optional()
 })
 
+
+export const createProfileResponseRiasecAnswersItemValueMax = 5;
+
+
+
 export const CreateProfileResponse = zod.object({
+  "hrdcEligibilityStatus": zod.union([zod.literal('yes'),zod.literal('no'),zod.literal('unknown'),zod.literal(null)]).nullish(),
+  "education": zod.string().nullish(),
+  "experience": zod.string().nullish(),
+  "cvExtractionKey": zod.string().nullish(),
+  "onboardingStep": zod.string().nullish(),
+  "verified": zod.boolean().optional(),
+  "cvEvidence": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string(),
+  "quote": zod.string().nullable(),
+  "source": zod.string()
+})).optional(),
+  "riasecAnswers": zod.array(zod.object({
+  "questionId": zod.number().int().min(1),
+  "value": zod.number().int().min(1).max(createProfileResponseRiasecAnswersItemValueMax)
+})).optional(),
   "id": zod.number().int(),
   "name": zod.string(),
   "segment": zod.enum(['worker', 'graduate', 'employer', 'career_centre']),
@@ -200,7 +242,28 @@ export const GetProfileParams = zod.object({
   "id": zod.coerce.number().int()
 })
 
+
+export const getProfileResponseRiasecAnswersItemValueMax = 5;
+
+
+
 export const GetProfileResponse = zod.object({
+  "hrdcEligibilityStatus": zod.union([zod.literal('yes'),zod.literal('no'),zod.literal('unknown'),zod.literal(null)]).nullish(),
+  "education": zod.string().nullish(),
+  "experience": zod.string().nullish(),
+  "cvExtractionKey": zod.string().nullish(),
+  "onboardingStep": zod.string().nullish(),
+  "verified": zod.boolean().optional(),
+  "cvEvidence": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string(),
+  "quote": zod.string().nullable(),
+  "source": zod.string()
+})).optional(),
+  "riasecAnswers": zod.array(zod.object({
+  "questionId": zod.number().int().min(1),
+  "value": zod.number().int().min(1).max(getProfileResponseRiasecAnswersItemValueMax)
+})).optional(),
   "id": zod.number().int(),
   "name": zod.string(),
   "segment": zod.enum(['worker', 'graduate', 'employer', 'career_centre']),
@@ -238,6 +301,15 @@ export const UpdateProfileParams = zod.object({
   "id": zod.coerce.number().int()
 })
 
+export const updateProfileBodyEducationMax = 6000;
+
+export const updateProfileBodyExperienceMax = 6000;
+
+
+export const updateProfileBodyRiasecAnswersItemValueMax = 5;
+
+export const updateProfileBodyRiasecAnswersMax = 30;
+
 
 export const updateProfileBodyWeeklyHoursMax = 60;
 
@@ -246,6 +318,15 @@ export const updateProfileBodyBudgetMyrMin = 0;
 
 
 export const UpdateProfileBody = zod.object({
+  "hrdcEligibilityStatus": zod.enum(['yes', 'no', 'unknown']).optional(),
+  "education": zod.string().max(updateProfileBodyEducationMax).optional(),
+  "experience": zod.string().max(updateProfileBodyExperienceMax).optional(),
+  "onboardingStep": zod.enum(['status', 'cv', 'review', 'holland', 'results', 'save', 'complete']).optional(),
+  "verified": zod.boolean().optional(),
+  "riasecAnswers": zod.array(zod.object({
+  "questionId": zod.number().int().min(1),
+  "value": zod.number().int().min(1).max(updateProfileBodyRiasecAnswersItemValueMax)
+})).max(updateProfileBodyRiasecAnswersMax).optional(),
   "name": zod.string().min(1).optional(),
   "segment": zod.enum(['worker', 'graduate', 'employer', 'career_centre']).optional(),
   "currentRole": zod.string().optional(),
@@ -262,7 +343,28 @@ export const UpdateProfileBody = zod.object({
   "removeSkillIds": zod.array(zod.number().int()).optional()
 })
 
+
+export const updateProfileResponseRiasecAnswersItemValueMax = 5;
+
+
+
 export const UpdateProfileResponse = zod.object({
+  "hrdcEligibilityStatus": zod.union([zod.literal('yes'),zod.literal('no'),zod.literal('unknown'),zod.literal(null)]).nullish(),
+  "education": zod.string().nullish(),
+  "experience": zod.string().nullish(),
+  "cvExtractionKey": zod.string().nullish(),
+  "onboardingStep": zod.string().nullish(),
+  "verified": zod.boolean().optional(),
+  "cvEvidence": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string(),
+  "quote": zod.string().nullable(),
+  "source": zod.string()
+})).optional(),
+  "riasecAnswers": zod.array(zod.object({
+  "questionId": zod.number().int().min(1),
+  "value": zod.number().int().min(1).max(updateProfileResponseRiasecAnswersItemValueMax)
+})).optional(),
   "id": zod.number().int(),
   "name": zod.string(),
   "segment": zod.enum(['worker', 'graduate', 'employer', 'career_centre']),
@@ -311,11 +413,34 @@ export const UploadCvParams = zod.object({
 })
 
 export const UploadCvBody = zod.object({
+  "consent": zod.boolean(),
+  "lang": zod.enum(['en', 'ms', 'zh']).optional(),
   "fileName": zod.string(),
   "contentBase64": zod.string()
 })
 
+
+export const uploadCvResponseRiasecAnswersItemValueMax = 5;
+
+
+
 export const UploadCvResponse = zod.object({
+  "hrdcEligibilityStatus": zod.union([zod.literal('yes'),zod.literal('no'),zod.literal('unknown'),zod.literal(null)]).nullish(),
+  "education": zod.string().nullish(),
+  "experience": zod.string().nullish(),
+  "cvExtractionKey": zod.string().nullish(),
+  "onboardingStep": zod.string().nullish(),
+  "verified": zod.boolean().optional(),
+  "cvEvidence": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string(),
+  "quote": zod.string().nullable(),
+  "source": zod.string()
+})).optional(),
+  "riasecAnswers": zod.array(zod.object({
+  "questionId": zod.number().int().min(1),
+  "value": zod.number().int().min(1).max(uploadCvResponseRiasecAnswersItemValueMax)
+})).optional(),
   "id": zod.number().int(),
   "name": zod.string(),
   "segment": zod.enum(['worker', 'graduate', 'employer', 'career_centre']),
@@ -374,7 +499,28 @@ export const SubmitRiasecBody = zod.object({
 }))
 })
 
+
+export const submitRiasecResponseRiasecAnswersItemValueMax = 5;
+
+
+
 export const SubmitRiasecResponse = zod.object({
+  "hrdcEligibilityStatus": zod.union([zod.literal('yes'),zod.literal('no'),zod.literal('unknown'),zod.literal(null)]).nullish(),
+  "education": zod.string().nullish(),
+  "experience": zod.string().nullish(),
+  "cvExtractionKey": zod.string().nullish(),
+  "onboardingStep": zod.string().nullish(),
+  "verified": zod.boolean().optional(),
+  "cvEvidence": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string(),
+  "quote": zod.string().nullable(),
+  "source": zod.string()
+})).optional(),
+  "riasecAnswers": zod.array(zod.object({
+  "questionId": zod.number().int().min(1),
+  "value": zod.number().int().min(1).max(submitRiasecResponseRiasecAnswersItemValueMax)
+})).optional(),
   "id": zod.number().int(),
   "name": zod.string(),
   "segment": zod.enum(['worker', 'graduate', 'employer', 'career_centre']),
@@ -414,6 +560,11 @@ export const GetProfileMatchesParams = zod.object({
 
 export const GetProfileMatchesResponseItem = zod.object({
   "role": zod.object({
+  "sourceUrl": zod.string().nullish(),
+  "sourceVersion": zod.string().nullish(),
+  "officialTitle": zod.string().nullish(),
+  "sourceFetchedAt": zod.string().nullish(),
+  "myColStatus": zod.enum(['unverified']).optional(),
   "id": zod.number().int(),
   "socCode": zod.string(),
   "title": zod.string(),
@@ -453,7 +604,7 @@ export const GetProfileMatchesResponseItem = zod.object({
   "category": zod.string(),
   "importance": zod.number().int().describe('1 (nice to have) to 3 (core)')
 })),
-  "marketDemand": zod.number().describe('0-100 market signal, separate from personal fit')
+  "marketDemand": zod.number().nullable().describe('Unavailable until a verified Malaysian demand series is configured; AI exposure is not demand.')
 })
 export const GetProfileMatchesResponse = zod.array(GetProfileMatchesResponseItem)
 
@@ -463,12 +614,13 @@ export const GetProfilePlanParams = zod.object({
 })
 
 export const GetProfilePlanResponse = zod.union([zod.object({
+  "verificationStatus": zod.enum(['unverified']).optional(),
   "id": zod.number().int(),
   "profileId": zod.number().int(),
   "roleId": zod.number().int(),
   "roleTitle": zod.string(),
-  "totalWeeks": zod.number().int(),
-  "totalCostMyr": zod.number(),
+  "totalWeeks": zod.number().int().nullable(),
+  "totalCostMyr": zod.number().nullable(),
   "uncoveredSkills": zod.array(zod.string()),
   "items": zod.array(zod.object({
   "courseId": zod.number().int(),
@@ -499,12 +651,13 @@ export const CreateProfilePlanBody = zod.object({
 })
 
 export const CreateProfilePlanResponse = zod.object({
+  "verificationStatus": zod.enum(['unverified']).optional(),
   "id": zod.number().int(),
   "profileId": zod.number().int(),
   "roleId": zod.number().int(),
   "roleTitle": zod.string(),
-  "totalWeeks": zod.number().int(),
-  "totalCostMyr": zod.number(),
+  "totalWeeks": zod.number().int().nullable(),
+  "totalCostMyr": zod.number().nullable(),
   "uncoveredSkills": zod.array(zod.string()),
   "items": zod.array(zod.object({
   "courseId": zod.number().int(),
@@ -602,6 +755,11 @@ export const ListRolesQueryParams = zod.object({
 })
 
 export const ListRolesResponseItem = zod.object({
+  "sourceUrl": zod.string().nullish(),
+  "sourceVersion": zod.string().nullish(),
+  "officialTitle": zod.string().nullish(),
+  "sourceFetchedAt": zod.string().nullish(),
+  "myColStatus": zod.enum(['unverified']).optional(),
   "id": zod.number().int(),
   "socCode": zod.string(),
   "title": zod.string(),
@@ -629,6 +787,11 @@ export const GetRoleParams = zod.object({
 })
 
 export const GetRoleResponse = zod.object({
+  "sourceUrl": zod.string().nullish(),
+  "sourceVersion": zod.string().nullish(),
+  "officialTitle": zod.string().nullish(),
+  "sourceFetchedAt": zod.string().nullish(),
+  "myColStatus": zod.enum(['unverified']).optional(),
   "id": zod.number().int(),
   "socCode": zod.string(),
   "title": zod.string(),
@@ -700,6 +863,8 @@ export const GetMarketOverviewResponse = zod.object({
 
 
 export const ListMarketSourcesResponseItem = zod.object({
+  "version": zod.string().nullish(),
+  "stale": zod.boolean().optional(),
   "id": zod.string(),
   "name": zod.string(),
   "kind": zod.enum(['dataset', 'catalogue', 'ai_endpoint']),
@@ -721,6 +886,8 @@ export const ListMarketSourcesResponse = zod.array(ListMarketSourcesResponseItem
  * Triggers ingestion of all market sources. No GPU used.
  */
 export const RefreshMarketDataResponseItem = zod.object({
+  "version": zod.string().nullish(),
+  "stale": zod.boolean().optional(),
   "id": zod.string(),
   "name": zod.string(),
   "kind": zod.enum(['dataset', 'catalogue', 'ai_endpoint']),

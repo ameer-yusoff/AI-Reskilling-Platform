@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Link, useLocation, useSearch } from "wouter";
+import { useState, type FormEvent } from "react";
+import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Bot, ClipboardList, FileText, Loader2, Plus, Send, Sparkles, UserRound } from "lucide-react";
 import {
@@ -12,7 +12,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AiWait, Empty, ErrorBox, GuestBanner, Markdown, PageHeader, Panel, Rows, SegTag, SourceList, Stat } from "@/components/kit";
-import { ProfileFormDialog } from "@/components/profile-form";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { roleTitle, useFmt } from "@/lib/fmt";
@@ -25,18 +24,15 @@ export function Workspace() {
   const search = useSearch();
   const [, nav] = useLocation();
   const preset = new URLSearchParams(search).get("new");
-  const [open, setOpen] = useState(false);
-  const [segment, setSegment] = useState<Segment>("worker");
-  useEffect(() => {
-    if (preset === "worker" || preset === "graduate") { setSegment(preset); setOpen(true); }
-  }, [preset]);
+  const start = (seg: Segment) => nav(`/onboarding/status?seg=${seg}`);
   const profiles = useListProfiles(undefined, { query: { queryKey: getListProfilesQueryKey() } });
   const sum = useGetDashboardSummary({ query: { queryKey: getGetDashboardSummaryQueryKey() } });
   const s = sum.data;
+  if (preset === "worker" || preset === "graduate") return <Redirect to={`/onboarding/status?seg=${preset}`} replace />;
   return (
     <>
       <PageHeader eyebrow={t(user ? "portal.individual" : "portal.guest")} title={user ? t("me.hello", { name: user.name }) : t("me.title")} sub={t("me.sub")}
-        actions={<Button className="min-h-11" onClick={() => { setSegment("worker"); setOpen(true); }} data-testid="button-new-profile"><Plus className="mr-1.5 h-4 w-4" />{t("me.newProfile")}</Button>} />
+        actions={<Button className="min-h-11" onClick={() => start("worker")} data-testid="button-new-profile"><Plus className="mr-1.5 h-4 w-4" />{t("me.newProfile")}</Button>} />
       {!user && <div className="mb-5"><GuestBanner /></div>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label={t("me.statProfiles")} value={s ? f.num(s.profileCount) : "-"} tone="maroon" testid="text-stat-profiles" />
@@ -49,8 +45,8 @@ export function Workspace() {
           {profiles.isLoading ? <Rows n={3} h="h-20" /> : profiles.isError ? <ErrorBox error={profiles.error} retry={() => profiles.refetch()} /> : !profiles.data?.length ? (
             <Empty title={t("me.emptyTitle")} icon={<UserRound className="h-5 w-5" />} action={
               <div className="flex flex-wrap justify-center gap-2">
-                <Button className="min-h-11" onClick={() => { setSegment("worker"); setOpen(true); }} data-testid="button-start-worker">{t("landing.worker")}</Button>
-                <Button variant="outline" className="min-h-11" onClick={() => { setSegment("graduate"); setOpen(true); }} data-testid="button-start-graduate">{t("landing.grad")}</Button>
+                <Button className="min-h-11" onClick={() => start("worker")} data-testid="button-start-worker">{t("landing.worker")}</Button>
+                <Button variant="outline" className="min-h-11" onClick={() => start("graduate")} data-testid="button-start-graduate">{t("landing.grad")}</Button>
               </div>}>{t("me.emptyBody")}</Empty>
           ) : (
             <ul className="space-y-2">
@@ -93,7 +89,6 @@ export function Workspace() {
           )}
         </Panel>
       </div>
-      <ProfileFormDialog open={open} onOpenChange={(o) => { setOpen(o); if (!o && preset) nav("/me", { replace: true }); }} segment={segment} onDone={(p) => nav(`/me/profiles/${p.id}/intake`)} />
     </>
   );
 }

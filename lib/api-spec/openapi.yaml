@@ -681,10 +681,40 @@ components:
           $ref: "#/components/schemas/SkillStatus"
         evidence: { type: ["string", "null"] }
 
+    InterestAnswer:
+      type: object
+      required: [questionId, value]
+      properties:
+        questionId: { type: integer, minimum: 1 }
+        value: { type: integer, minimum: 1, maximum: 5 }
+
+    CvEvidence:
+      type: object
+      required: [field, value, quote, source]
+      properties:
+        field: { type: string }
+        value: { type: string }
+        quote: { type: ["string", "null"] }
+        source: { type: string }
+
     Profile:
       type: object
       required: [id, name, segment, weeklyHours, budgetMyr, skills, createdAt]
       properties:
+        hrdcEligibilityStatus: { type: ["string", "null"], enum: [yes, no, unknown, null] }
+        education: { type: ["string", "null"] }
+        experience: { type: ["string", "null"] }
+        cvExtractionKey: { type: ["string", "null"] }
+        onboardingStep: { type: ["string", "null"] }
+        verified: { type: boolean }
+        cvEvidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/CvEvidence"
+        riasecAnswers:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterestAnswer"
         id: { type: integer }
         name: { type: string }
         segment:
@@ -736,6 +766,16 @@ components:
     ProfileUpdate:
       type: object
       properties:
+        hrdcEligibilityStatus: { type: string, enum: [yes, no, unknown] }
+        education: { type: string, maxLength: 6000 }
+        experience: { type: string, maxLength: 6000 }
+        onboardingStep: { type: string, enum: [status, cv, review, holland, results, save, complete] }
+        verified: { type: boolean }
+        riasecAnswers:
+          type: array
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/InterestAnswer"
         name: { type: string, minLength: 1 }
         segment:
           $ref: "#/components/schemas/Segment"
@@ -756,8 +796,11 @@ components:
 
     CvUpload:
       type: object
-      required: [fileName, contentBase64]
+      required: [fileName, contentBase64, consent]
       properties:
+        consent: { type: boolean }
+        lang:
+          $ref: "#/components/schemas/Lang"
         fileName: { type: string }
         contentBase64: { type: string }
 
@@ -808,6 +851,11 @@ components:
       type: object
       required: [id, socCode, title, titleMs, titleZh, sector, riasecCode, skills, myColCritical]
       properties:
+        sourceUrl: { type: ["string", "null"] }
+        sourceVersion: { type: ["string", "null"] }
+        officialTitle: { type: ["string", "null"] }
+        sourceFetchedAt: { type: ["string", "null"] }
+        myColStatus: { type: string, enum: [unverified] }
         id: { type: integer }
         socCode: { type: string }
         title: { type: string }
@@ -852,7 +900,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RoleSkill"
-        marketDemand: { type: number, description: "0-100 market signal, separate from personal fit" }
+        marketDemand: { type: ["number", "null"], description: "Unavailable until a verified Malaysian demand series is configured; AI exposure is not demand." }
 
     Course:
       type: object
@@ -910,12 +958,13 @@ components:
       type: object
       required: [id, profileId, roleId, roleTitle, totalWeeks, totalCostMyr, uncoveredSkills, items, createdAt]
       properties:
+        verificationStatus: { type: string, enum: [unverified] }
         id: { type: integer }
         profileId: { type: integer }
         roleId: { type: integer }
         roleTitle: { type: string }
-        totalWeeks: { type: integer }
-        totalCostMyr: { type: number }
+        totalWeeks: { type: ["integer", "null"] }
+        totalCostMyr: { type: ["number", "null"] }
         uncoveredSkills:
           type: array
           items: { type: string }
@@ -990,6 +1039,8 @@ components:
       type: object
       required: [id, name, kind, url, description, refreshCadence, status, recordCount, consumers]
       properties:
+        version: { type: ["string", "null"] }
+        stale: { type: boolean }
         id: { type: string }
         name: { type: string }
         kind: { type: string, enum: [dataset, catalogue, ai_endpoint] }

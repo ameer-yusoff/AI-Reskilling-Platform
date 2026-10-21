@@ -9,6 +9,9 @@ import type { MarketSourceKind } from './marketSourceKind';
 import type { MarketSourceStatus } from './marketSourceStatus';
 
 export interface MarketSource {
+  /** @nullable */
+  version?: string | null;
+  stale?: boolean;
   id: string;
   name: string;
   kind: MarketSourceKind;

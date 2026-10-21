@@ -227,3 +227,15 @@ export function GuestBanner({ compact }: { compact?: boolean }) {
 export function ExplainNote({ children }: { children: ReactNode }) {
   return <p className="rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">{children}</p>;
 }
+
+export function DataNotice() {
+  const { t } = useT();
+  return (
+    <aside className="mt-10 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-xs leading-relaxed text-muted-foreground" data-testid="notice-data">
+      <div className="mb-1.5 font-semibold text-foreground">{t("notice.title")}</div>
+      <ul className="grid gap-1 md:grid-cols-2">
+        {(["notice.courses", "notice.mycol", "notice.sdg", "notice.onet"] as const).map((k) => <li key={k} className="flex gap-2"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />{t(k)}</li>)}
+      </ul>
+    </aside>
+  );
+}

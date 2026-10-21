@@ -10,6 +10,7 @@ import { eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { endpointHealth } from "./llm";
 import { loadCourses } from "./catalog";
+import { ingestOnet } from "./onet";
 
 export type SourceDef = {
   id: string;
@@ -26,6 +27,7 @@ const HF_DATASET = "Anthropic/EconomicIndex";
 
 // Consumer keys are translated in the frontend.
 export const SOURCES: SourceDef[] = [
+  { id: "onet", name: "O*NET occupation references", kind: "catalogue", url: "https://www.onetcenter.org/database.html", description: "Official US occupation, skill and interest reference data; explicit SOC .00 crosswalk, not Malaysian vacancies.", refreshCadence: "release_6h", consumers: ["role_matcher", "agent_cv", "agent_holland"] },
   {
     id: "dosm_lfs_month",
     name: "DOSM Labour Force Survey (monthly)",
@@ -67,7 +69,7 @@ export const SOURCES: SourceDef[] = [
     name: "RunPod main model endpoint",
     kind: "ai_endpoint",
     url: "https://www.runpod.io/console/serverless",
-    description: "Serverless vLLM endpoint for the larger model. Health is checked without generating text, so it uses no GPU time.",
+    description: "Serverless vLLM endpoint for the larger model. Health checks do not generate text but can wake a worker.",
     refreshCadence: "on_refresh",
     consumers: ["agent_profiler", "agent_fitter", "agent_planner", "predictions"],
   },
@@ -157,9 +159,11 @@ async function ingestLabour(): Promise<void> {
 }
 
 async function ingestExposure(): Promise<void> {
+  const metadata = await fetchJson<{ sha: string; cardData?: { license?: string } }>(`${HF}/api/datasets/${HF_DATASET}`);
+  if (metadata.cardData?.license !== "mit" || !/^[a-f0-9]{40}$/.test(metadata.sha)) throw new Error("EconomicIndex licence or revision could not be verified");
   const rows: { socCode: string; title: string; exposure: number }[] = [];
   let header = true;
-  for await (const line of streamLines(`${HF}/datasets/${HF_DATASET}/resolve/main/labor_market_impacts/job_exposure.csv`)) {
+  for await (const line of streamLines(`${HF}/datasets/${HF_DATASET}/resolve/${metadata.sha}/labor_market_impacts/job_exposure.csv`)) {
     if (header) {
       header = false;
       continue;
@@ -175,7 +179,7 @@ async function ingestExposure(): Promise<void> {
     await tx.delete(occupationExposureTable);
     for (let i = 0; i < rows.length; i += 500) await tx.insert(occupationExposureTable).values(rows.slice(i, i + 500)).onConflictDoNothing();
   });
-  await setSource("aei_exposure", { status: "ok", lastFetchedAt: new Date(), dataDate: "labor_market_impacts", recordCount: rows.length, error: null });
+  await setSource("aei_exposure", { status: "ok", lastFetchedAt: new Date(), dataDate: null, version: `${metadata.sha}:labor_market_impacts/job_exposure.csv`, recordCount: rows.length, error: null });
 }
 
 async function latestUsageFile(): Promise<{ release: string; path: string }> {
@@ -261,6 +265,10 @@ async function checkUrl(url: string): Promise<boolean> {
 
 async function checkCourseLinks(): Promise<void> {
   const courses = await loadCourses();
+  if (!courses.length) {
+    await setSource("course_catalogue", { status: "not_configured", recordCount: 0, detail: null, error: "provider_verification_required" });
+    return;
+  }
   const broken: string[] = [];
   let i = 0;
   const worker = async () => {
@@ -291,6 +299,7 @@ let running: Promise<void> | null = null;
 export function refreshAll(force = false): Promise<void> {
   if (running) return running;
   const jobs: [string, () => Promise<void>][] = [
+    ["onet", ingestOnet],
     ["dosm_lfs_month", ingestLabour],
     ["aei_exposure", ingestExposure],
     ["aei_usage", () => ingestUsage(force)],
@@ -321,6 +330,8 @@ export async function listSources() {
     const r = byId.get(s.id);
     return {
       ...s,
+      version: r?.version ?? null,
+      stale: !!r?.lastFetchedAt && Date.now() - r.lastFetchedAt.getTime() > 12 * 3600000,
       status: (r?.status ?? "pending") as "ok" | "error" | "pending" | "not_configured",
       detail: r?.detail ?? null,
       lastFetchedAt: r?.lastFetchedAt ? r.lastFetchedAt.toISOString() : null,

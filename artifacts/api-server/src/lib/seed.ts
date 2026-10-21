@@ -35,14 +35,14 @@ export async function seedCatalog(): Promise<void> {
             socCode: role.socCode,
             titleMs: role.titleMs,
             sector: role.sector,
-            riasecCode: role.riasecCode,
-            myColCritical: role.myColCritical,
-            description: role.description,
+            myColCritical: false,
           },
         })
         .returning();
-      await tx.delete(roleSkillsTable).where(sql`${roleSkillsTable.roleId} = ${row.id}`);
-      await tx.insert(roleSkillsTable).values(skills.map(([n, imp]) => ({ roleId: row.id, skillId: need(n), importance: imp })));
+      if (!row.sourceVersion) {
+        await tx.delete(roleSkillsTable).where(sql`${roleSkillsTable.roleId} = ${row.id}`);
+        await tx.insert(roleSkillsTable).values(skills.map(([n, imp]) => ({ roleId: row.id, skillId: need(n), importance: imp })));
+      }
     }
 
     for (const c of COURSES) {

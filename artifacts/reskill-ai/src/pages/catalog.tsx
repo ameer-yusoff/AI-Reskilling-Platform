@@ -3,7 +3,7 @@ import { Link, useParams } from "wouter";
 import { ArrowLeft, Award, ExternalLink } from "lucide-react";
 import {
   useGetMarketOverview, useGetRole, useListCourses, useListRoles,
-  getGetMarketOverviewQueryKey, getGetRoleQueryKey, getListCoursesQueryKey, type CostType,
+  getGetMarketOverviewQueryKey, getGetRoleQueryKey, getListCoursesQueryKey, type CostType, type Role,
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -42,7 +42,6 @@ export function Roles() {
                   <div><div className="text-muted-foreground">{t("roles.usageMy")}</div><div className="tnum font-semibold">{f.pct(r.aiUsagePctMy, 2)}</div></div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {r.myColCritical && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">MyCOL</span>}
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">RIASEC {r.riasecCode}</span>
                   <span className="text-[10px] text-muted-foreground">{t("roles.skillsN", { n: r.skills.length })}</span>
                 </div>
@@ -76,7 +75,7 @@ export function RoleDetail() {
           <PageHeader eyebrow={`${tk("sector", r.sector)} · SOC ${r.socCode}`} title={roleTitle(r, lang)} sub={lang !== "en" ? r.title : undefined} />
           <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
             <div className="space-y-4">
-              {r.description && <Panel title={t("roles.about")}><p className="text-sm leading-relaxed text-muted-foreground">{r.description}</p></Panel>}
+              {r.description && <Panel title={t("roles.about")} meta={t("role.sourceExcerpt")}><blockquote lang="en" className="border-l-2 border-accent pl-3 text-sm leading-relaxed text-muted-foreground" data-testid="text-role-source-excerpt">{r.description}</blockquote></Panel>}
               <Panel title={t("roles.requiredSkills")} meta={t("roles.importanceNote")}>
                 <div className="space-y-4">
                   {groups.map(([cat, skills]) => (
@@ -100,10 +99,11 @@ export function RoleDetail() {
                   <div><div className="text-xs text-muted-foreground">{t("market.global")}</div><div className="tnum font-semibold">{f.pct(r.aiUsagePctGlobal, 2)}</div></div>
                 </div>
               </Panel>
+              <ProvenancePanel r={r} />
               <Panel title={t("roles.signals")}>
                 <dl className="space-y-2 text-sm">
                   <div className="flex justify-between gap-2"><dt className="text-muted-foreground">RIASEC</dt><dd className="font-semibold">{r.riasecCode}</dd></div>
-                  <div className="flex justify-between gap-2"><dt className="text-muted-foreground">{t("roles.mycol")}</dt><dd className="font-semibold">{r.myColCritical ? t("common.yes") : t("common.no")}</dd></div>
+                  <div className="flex justify-between gap-2"><dt className="text-muted-foreground">{t("roles.mycol")}</dt><dd className="font-semibold">{t("ob.unverified")}</dd></div>
                 </dl>
                 <div className="mt-3 flex flex-wrap gap-1">{(SECTOR_SDG[r.sector] ?? ["4", "8"]).map((g) => <SdgBadge key={g} code={g} title={tk("sdg", g)} />)}</div>
                 <ExplainNote>{t("roles.mycolExplain")}</ExplainNote>
@@ -157,5 +157,25 @@ export function Courses({ hr }: { hr?: boolean }) {
       )}
       <p className="mt-4 text-xs text-muted-foreground">{t("courses.hrdcHonest")}</p>
     </>
+  );
+}
+
+function ProvenancePanel({ r }: { r: Role }) {
+  const { t } = useT();
+  const f = useFmt();
+  const src = r;
+  const has = !!(src.officialTitle || src.sourceUrl || src.sourceVersion);
+  return (
+    <Panel title={t("role.provTitle")}>
+      {!has ? <p className="text-sm text-muted-foreground">{t("role.provMissing")}</p> : (
+        <dl className="space-y-2 text-sm" data-testid="panel-provenance">
+          {src.officialTitle && <div><dt className="text-xs text-muted-foreground">{t("role.officialTitle")}</dt><dd lang="en" className="font-medium" data-testid="text-official-title">{src.officialTitle}</dd></div>}
+          {src.sourceVersion && <div><dt className="text-xs text-muted-foreground">{t("role.version")}</dt><dd className="font-medium">{src.sourceVersion}</dd></div>}
+          {src.sourceFetchedAt && <div><dt className="text-xs text-muted-foreground">{t("role.fetched")}</dt><dd>{f.date(src.sourceFetchedAt)}</dd></div>}
+          {src.sourceUrl && /^https:\/\//.test(src.sourceUrl) && <a href={src.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center font-semibold text-primary hover:underline" data-testid="link-role-source">{t("role.sourceLink")}</a>}
+        </dl>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground" data-testid="text-mycol-unverified">{t("role.mycolUnverified")}</p>
+    </Panel>
   );
 }

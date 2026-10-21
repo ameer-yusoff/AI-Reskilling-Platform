@@ -11,6 +11,7 @@ import { BrandMark, ErrorBox } from "@/components/kit";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, portalHome } from "@/lib/auth";
 import { errCode, useT, type DictKey } from "@/i18n";
+import { moveGuestObToUser, safeNext } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
 function HonestyLine() {
@@ -69,7 +70,7 @@ export function Landing() {
         <section className="grid gap-3 md:grid-cols-2" aria-label={t("landing.chooseTitle")}>
           <h2 className="truncate whitespace-nowrap text-lg font-bold md:col-span-2">{t("landing.chooseTitle")}</h2>
           {([["worker", HardHat, "landing.worker", "landing.workerSub"], ["graduate", GraduationCap, "landing.grad", "landing.gradSub"]] as const).map(([seg, Icon, title, sub], i) => (
-            <Link key={seg} href={`/me?new=${seg}`} data-testid={`link-start-${seg}`} style={{ animationDelay: `${i * 80}ms` }}
+            <Link key={seg} href={`/onboarding/status?seg=${seg}`} data-testid={`link-start-${seg}`} style={{ animationDelay: `${i * 80}ms` }}
               className="rise group flex min-h-24 items-center gap-4 rounded-2xl border border-card-border bg-card p-5 shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Icon className="h-6 w-6" /></span>
               <span className="min-w-0 flex-1"><span className="block truncate whitespace-nowrap font-bold">{t(title)}</span><span className="mt-0.5 block text-sm text-muted-foreground">{t(sub)}</span></span>
@@ -147,7 +148,9 @@ export function Login() {
   const search = useSearch();
   const [, nav] = useLocation();
   const { signIn } = useAuth();
-  const initialRole = new URLSearchParams(search).get("role");
+  const sp = new URLSearchParams(search);
+  const initialRole = sp.get("role");
+  const next = safeNext(sp.get("next"));
   const [role, setRole] = useState<UserRole>(initialRole === "hr" || initialRole === "tvet" ? initialRole : "individual");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -160,7 +163,7 @@ export function Login() {
     e.preventDefault();
     setErr(null);
     login.mutate({ data: { email: email.trim(), password, role } }, {
-      onSuccess: async (s) => { await signIn(s); nav(portalHome(s.user.role)); },
+      onSuccess: async (s) => { if (s.user.role === "individual") moveGuestObToUser(s.user.id); await signIn(s); nav(s.user.role === "individual" && next ? next : portalHome(s.user.role)); },
       onError: (e) => {
         const c = errCode(e);
         if (c === "wrong_role") {
@@ -196,14 +199,15 @@ export function Login() {
 
       {role !== "individual" && (
         <div className="mt-6 rounded-2xl border border-accent/40 bg-[hsl(var(--gold-soft))]/50 p-4">
-          <div className="text-sm font-semibold">{t("auth.demoTitle")}</div>
+          <div className="flex items-center gap-2 text-sm font-semibold">{t("auth.demoTitle")}<span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-accent-foreground" data-testid="badge-demo">{t("auth.demoBadge")}</span></div>
           <p className="text-xs text-muted-foreground">{t("auth.demoSub")}</p>
+          <p className="mt-1 text-[11px] font-medium text-foreground/80">{t("auth.demoLabel")}</p>
           <div className="mt-3 space-y-2">
             {demos.isLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             {!demos.isLoading && !roleDemos.length && <div className="text-xs text-muted-foreground">{t("auth.demoNone")}</div>}
             {roleDemos.map((d) => (
               <div key={d.email} className="flex items-center justify-between gap-2 rounded-xl bg-card p-2.5">
-                <div className="min-w-0"><div title={d.organization} className="truncate whitespace-nowrap text-sm font-medium">{d.organization}</div><div className="truncate text-[11px] text-muted-foreground">{d.email}</div></div>
+                <div className="min-w-0"><div title={d.organization} className="flex min-w-0 items-center gap-1.5 text-sm font-medium"><span className="shrink-0 rounded bg-[hsl(var(--gold-soft))] px-1 text-[9px] font-bold text-accent">{t("auth.demoBadge")}</span><span className="truncate whitespace-nowrap">{d.organization}</span></div><div className="truncate text-[11px] text-muted-foreground">{d.email}</div></div>
                 <Button type="button" variant="outline" className="min-h-11 shrink-0" onClick={() => { setEmail(d.email); setPassword(d.password); }} data-testid={`button-demo-${d.email}`}>{t("auth.useDemo")}</Button>
               </div>
             ))}
@@ -213,16 +217,26 @@ export function Login() {
 
       {role === "individual" && (
         <div className="mt-6 space-y-3 border-t border-border pt-5 text-sm">
-          <Link href="/me" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border font-medium hover:border-primary hover:text-primary" data-testid="link-continue-guest">{t("auth.continueGuest")}<ArrowRight className="h-4 w-4" /></Link>
-          <p className="text-center text-muted-foreground">{t("auth.noAccount")} <Link href="/register" className="font-semibold text-primary underline-offset-2 hover:underline">{t("auth.register")}</Link></p>
+          <Link href={next ?? "/me"} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border font-medium hover:border-primary hover:text-primary" data-testid="link-continue-guest">{t("auth.continueGuest")}<ArrowRight className="h-4 w-4" /></Link>
+          <p className="text-center text-muted-foreground">{t("auth.noAccount")} <Link href={next ? `/register?next=${encodeURIComponent(next)}` : "/register"} className="font-semibold text-primary underline-offset-2 hover:underline">{t("auth.register")}</Link></p>
         </div>
       )}
     </AuthFrame>
   );
 }
 
+function dummySuffix() {
+  const b = new Uint8Array(5);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
 export function Register() {
   const { t } = useT();
+  const search = useSearch();
+  const sp = new URLSearchParams(search);
+  const next = safeNext(sp.get("next"));
+  const kind = sp.get("seg") === "student" ? "student" : "worker";
   const [, nav] = useLocation();
   const { signIn } = useAuth();
   const { toast } = useToast();
@@ -237,9 +251,10 @@ export function Register() {
     if (password.length < 8) { setErr(t("auth.pwShort")); return; }
     reg.mutate({ data: { name: name.trim(), email: email.trim(), password } }, {
       onSuccess: async (s) => {
+        moveGuestObToUser(s.user.id);
         await signIn(s);
         toast({ title: t("auth.welcome", { name: s.user.name }), description: s.claimedProfiles > 0 ? t("auth.claimed", { n: s.claimedProfiles }) : undefined });
-        nav("/me");
+        nav(next ?? "/me");
       },
       onError: (e) => setErr(errCode(e) === "email_taken" ? t("auth.emailTaken") : errCode(e) === "invalid_input" ? t("err.invalid_input") : t("err.generic")),
     });
@@ -247,6 +262,16 @@ export function Register() {
   return (
     <AuthFrame title={t("auth.registerTitle")} sub={t("auth.registerSub")}>
       <form onSubmit={submit} className="space-y-4">
+        {next && <p className="rounded-xl bg-[hsl(var(--gold-soft))]/60 px-3 py-2 text-xs" data-testid="text-keep-guest">{t("auth.keepGuest")}</p>}
+        <div className="rounded-xl border border-dashed border-accent/60 p-3">
+          <Button type="button" variant="outline" className="min-h-11 w-full" data-testid="button-fill-dummy" onClick={() => {
+            const sfx = dummySuffix();
+            setName(t(kind === "student" ? "auth.dummyStudent" : "auth.dummyWorker"));
+            setEmail(`${kind}-${sfx}@example.invalid`);
+            setPassword(`demo-${sfx}`);
+          }}>{t("auth.fillDummy")}</Button>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{t("auth.dummyNote")}</p>
+        </div>
         <div className="space-y-1.5"><Label htmlFor="name">{t("auth.name")}</Label><Input id="name" required value={name} onChange={(e) => setName(e.target.value)} className="min-h-11" autoComplete="name" data-testid="input-name" /></div>
         <div className="space-y-1.5"><Label htmlFor="email">{t("auth.email")}</Label><Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-11" autoComplete="email" placeholder={t("auth.emailPh")} data-testid="input-email" /></div>
         <div className="space-y-1.5"><Label htmlFor="pw">{t("auth.password")}</Label><Input id="pw" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className="min-h-11" autoComplete="new-password" data-testid="input-password" />
@@ -254,7 +279,7 @@ export function Register() {
         {err && <ErrorBox message={err} />}
         <Button type="submit" className="min-h-11 w-full font-semibold" disabled={reg.isPending} data-testid="button-register">{reg.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("auth.register")}</Button>
         <p className="text-xs text-muted-foreground">{t("auth.claimNote")}</p>
-        <p className="text-center text-sm text-muted-foreground">{t("auth.haveAccount")} <Link href="/login" className="font-semibold text-primary hover:underline">{t("auth.login")}</Link></p>
+        <p className="text-center text-sm text-muted-foreground">{t("auth.haveAccount")} <Link href={next ? `/login?role=individual&next=${encodeURIComponent(next)}` : "/login"} className="font-semibold text-primary hover:underline">{t("auth.login")}</Link></p>
       </form>
     </AuthFrame>
   );

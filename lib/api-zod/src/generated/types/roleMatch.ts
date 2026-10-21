@@ -15,6 +15,9 @@ export interface RoleMatch {
   breakdown: MatchBreakdown;
   matchedSkills: RoleSkill[];
   gapSkills: RoleSkill[];
-  /** 0-100 market signal, separate from personal fit */
-  marketDemand: number;
+  /**
+     * Unavailable until a verified Malaysian demand series is configured; AI exposure is not demand.
+     * @nullable
+     */
+  marketDemand: number | null;
 }

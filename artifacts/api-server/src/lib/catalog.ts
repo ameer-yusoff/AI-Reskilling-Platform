@@ -13,6 +13,10 @@ import {
 
 export type RoleSkillView = { skillId: number; name: string; category: string; importance: number };
 export type RoleView = {
+  sourceUrl?: string | null;
+  sourceVersion?: string | null;
+  officialTitle?: string | null;
+  sourceFetchedAt?: string | null;
   id: number;
   socCode: string;
   title: string;
@@ -60,6 +64,7 @@ export async function loadRoles(): Promise<RoleView[]> {
   const usageKey = (geo: string, soc: string) => `${geo}|${soc}`;
   const use = new Map(usage.filter((u) => u.level === 0).map((u) => [usageKey(u.geo, u.socCode), u.pct]));
   return roles
+    .filter((r) => !!r.sourceVersion)
     .map((r) => ({
       ...r,
       skills: rs
@@ -74,6 +79,12 @@ export async function loadRoles(): Promise<RoleView[]> {
 }
 
 export async function loadCourses(): Promise<CourseView[]> {
+  // No provider feed currently verifies price, duration, claimability or availability.
+  // Retain seed rows for backwards-compatible saved/demo plans, never publish them as facts.
+  return [];
+}
+
+export async function loadDemoCourses(): Promise<CourseView[]> {
   const [courses, cs, skills] = await Promise.all([
     db.select().from(coursesTable),
     db.select().from(courseSkillsTable),
@@ -97,6 +108,11 @@ export async function loadCourses(): Promise<CourseView[]> {
 export function roleToApi(r: RoleView) {
   return {
     id: r.id,
+    sourceUrl: r.sourceUrl ?? null,
+    sourceVersion: r.sourceVersion ?? null,
+    officialTitle: r.officialTitle ?? null,
+    sourceFetchedAt: r.sourceFetchedAt ?? null,
+    myColStatus: "unverified" as const,
     socCode: r.socCode,
     title: r.title,
     titleMs: r.titleMs,
@@ -107,7 +123,7 @@ export function roleToApi(r: RoleView) {
     aiExposure: r.aiExposure,
     aiUsagePctMy: r.aiUsagePctMy,
     aiUsagePctGlobal: r.aiUsagePctGlobal,
-    myColCritical: r.myColCritical,
+    myColCritical: false,
     description: r.description,
   };
 }

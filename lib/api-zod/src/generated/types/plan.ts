@@ -6,14 +6,18 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlanItem } from './planItem';
+import type { PlanVerificationStatus } from './planVerificationStatus';
 
 export interface Plan {
+  verificationStatus?: PlanVerificationStatus;
   id: number;
   profileId: number;
   roleId: number;
   roleTitle: string;
-  totalWeeks: number;
-  totalCostMyr: number;
+  /** @nullable */
+  totalWeeks: number | null;
+  /** @nullable */
+  totalCostMyr: number | null;
   uncoveredSkills: string[];
   items: PlanItem[];
   createdAt: Date;

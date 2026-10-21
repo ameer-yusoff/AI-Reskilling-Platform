@@ -1,0 +1,204 @@
+import { useState, type ReactNode } from "react";
+import { ChevronDown, ExternalLink } from "lucide-react";
+import type { AiStatus, MarketSource } from "@workspace/api-client-react";
+import { Panel } from "@/components/kit";
+import { useFmt } from "@/lib/fmt";
+import { useT, type DictKey } from "@/i18n";
+import { cn } from "@/lib/utils";
+
+export type DocType = "external" | "static" | "derived" | "demo" | "user";
+
+/** A fact row. `k` = translated prose, `ref` = verbatim reference identifier (URL, file, field, title), `url` = link. */
+type Row = { label: DictKey; k?: DictKey[]; ref?: string; url?: string };
+type Doc = { id: string; types: DocType[]; name: DictKey; sourceIds?: string[]; ai?: boolean; rows: Row[] };
+
+const DOCS: Doc[] = [
+  { id: "dosm", types: ["external"], name: "src.dosm_lfs_month.name", sourceIds: ["dosm_lfs_month"], rows: [
+    { label: "docs.f.publisher", ref: "Department of Statistics Malaysia (DOSM) / OpenDOSM" },
+    { label: "docs.f.dataset", url: "https://data.gov.my/data-catalogue/lfs_month" },
+    { label: "docs.f.api", url: "https://api.data.gov.my/data-catalogue?id=lfs_month&sort=-date&limit=60" },
+    { label: "docs.f.coverage", k: ["docs.dosm.coverage"] },
+    { label: "docs.f.fields", k: ["docs.dosm.fields"] },
+    { label: "docs.f.method", k: ["docs.dosm.method"] },
+    { label: "docs.f.license", k: ["docs.dosm.license"], url: "https://data.gov.my/terms" },
+    { label: "docs.f.cadence", k: ["docs.dosm.cadence"] },
+    { label: "docs.f.failure", k: ["docs.dosm.failure"] },
+  ] },
+  { id: "aei_usage", types: ["external"], name: "src.aei_usage.name", sourceIds: ["aei_usage"], rows: [
+    { label: "docs.f.publisher", ref: "Anthropic, EconomicIndex (Hugging Face)" },
+    { label: "docs.f.dataset", url: "https://huggingface.co/datasets/Anthropic/EconomicIndex" },
+    { label: "docs.f.version", k: ["docs.aeiu.version"] },
+    { label: "docs.f.files", k: ["docs.aeiu.files"] },
+    { label: "docs.f.method", k: ["docs.aeiu.method"] },
+    { label: "docs.f.limits", k: ["docs.aeiu.limits"] },
+    { label: "docs.f.license", k: ["docs.aeiu.license"] },
+    { label: "docs.f.cadence", k: ["docs.aeiu.cadence"] },
+  ] },
+  { id: "aei_exposure", types: ["external"], name: "src.aei_exposure.name", sourceIds: ["aei_exposure"], rows: [
+    { label: "docs.f.publisher", ref: "Anthropic, EconomicIndex (Hugging Face)" },
+    { label: "docs.f.api", url: "https://huggingface.co/datasets/Anthropic/EconomicIndex/resolve/main/labor_market_impacts/job_exposure.csv" },
+    { label: "docs.f.fields", k: ["docs.aeie.fields"] },
+    { label: "docs.f.limits", k: ["docs.aeie.limits"] },
+    { label: "docs.f.license", k: ["docs.aeiu.license"] },
+  ] },
+  { id: "onet", types: ["external"], name: "src.onet.name", sourceIds: ["onet"], rows: [
+    { label: "docs.f.publisher", ref: "U.S. Department of Labor, Employment and Training Administration (USDOL/ETA); National Center for O*NET Development" },
+    { label: "docs.f.dataset", url: "https://www.onetcenter.org/database.html" },
+    { label: "docs.f.api", url: "https://www.onetcenter.org/dl_files/database/db_31_0_csv.zip" },
+    { label: "docs.f.version", k: ["docs.onet.version"] },
+    { label: "docs.f.files", ref: "essential_skills.csv, transferable_skills.csv, career_interest_types.csv, occupation_data.csv" },
+    { label: "docs.f.coverage", k: ["docs.onet.coverage"] },
+    { label: "docs.f.method", k: ["docs.onet.method", "docs.onet.skills", "docs.onet.riasec", "docs.onet.provenance"] },
+    { label: "docs.f.license", k: ["docs.onet.license"], url: "https://www.onetcenter.org/license_db.html" },
+    { label: "docs.f.cadence", k: ["docs.onet.cadence"] },
+  ] },
+  { id: "courses", types: ["external", "static"], name: "src.course_catalogue.name", sourceIds: ["course_catalogue"], rows: [
+    { label: "docs.f.method", k: ["docs.course.status"] },
+    { label: "docs.f.limits", k: ["docs.course.limits"] },
+    { label: "docs.f.license", k: ["docs.course.license"] },
+  ] },
+  { id: "runpod", types: ["external", "user"], name: "sources.aiTitle", sourceIds: ["runpod_main", "runpod_light"], ai: true, rows: [
+    { label: "docs.f.publisher", ref: "RunPod Serverless (vLLM, OpenAI-compatible)" },
+    { label: "docs.f.dataset", url: "https://docs.runpod.io/serverless/vllm/openai-compatibility" },
+    { label: "docs.f.method", k: ["docs.ai.checks", "docs.ai.cold", "docs.ai.configured"] },
+    { label: "docs.f.limits", k: ["docs.ai.ids", "docs.ai.retrieval"] },
+    { label: "docs.f.privacy", k: ["docs.ai.privacy"] },
+  ] },
+  { id: "riasec", types: ["static", "user"], name: "docs.name.riasec", rows: [
+    { label: "docs.f.method", k: ["docs.riasec.items", "docs.riasec.scoring"] },
+    { label: "docs.f.limits", k: ["docs.riasec.limits"] },
+  ] },
+  { id: "match", types: ["derived"], name: "docs.name.match", rows: [
+    { label: "docs.f.method", k: ["docs.match.weights"] },
+    { label: "docs.f.limits", k: ["docs.match.demand", "docs.match.feasibility"] },
+  ] },
+  { id: "sdg", types: ["static"], name: "docs.name.sdg", rows: [
+    { label: "docs.f.publisher", ref: "United Nations, Sustainable Development Goals" },
+    { label: "docs.f.dataset", url: "https://sdgs.un.org/goals" },
+    { label: "docs.f.method", k: ["docs.sdg.method"] },
+    { label: "docs.f.limits", k: ["docs.sdg.limits"] },
+  ] },
+  { id: "demo", types: ["demo", "user"], name: "docs.name.demo", rows: [
+    { label: "docs.f.method", k: ["docs.demo.org", "docs.demo.individual"] },
+    { label: "docs.f.privacy", k: ["docs.demo.private"] },
+  ] },
+];
+
+const TYPES: DocType[] = ["external", "static", "derived", "demo", "user"];
+const TYPE_TONE: Record<DocType, string> = {
+  external: "bg-[hsl(var(--maroon-soft))] text-primary",
+  static: "bg-muted text-foreground",
+  derived: "bg-[hsl(var(--gold-soft))] text-foreground",
+  demo: "border border-dashed border-border text-muted-foreground",
+  user: "bg-card border border-border text-foreground",
+};
+
+export function TypeTag({ type }: { type: DocType }) {
+  const { t } = useT();
+  return <span className={cn("inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold", TYPE_TONE[type])}>{t(`docs.type.${type}` as DictKey)}</span>;
+}
+
+/** Raw server/publisher text, only behind an explicitly labelled technical disclosure. */
+export function TechDiagnostics({ text, testId }: { text?: string | null; testId?: string }) {
+  const { t } = useT();
+  if (!text) return null;
+  return (
+    <details className="mt-2 text-[11px]" data-testid={testId}>
+      <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">{t("docs.tech")}</summary>
+      <p className="mt-1 text-muted-foreground">{t("docs.techNote")}</p>
+      <pre lang="en" className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-muted/60 p-2 font-mono">{text}</pre>
+    </details>
+  );
+}
+
+function LinkOut({ url }: { url: string }) {
+  return <a href={url} target="_blank" rel="noreferrer" lang="en" className="inline-flex max-w-full items-start gap-1 break-all font-mono text-[11px] text-primary hover:underline">{url}<ExternalLink className="mt-0.5 h-3 w-3 shrink-0" /></a>;
+}
+
+function LiveSource({ s }: { s: MarketSource }) {
+  const { t, tk } = useT();
+  const f = useFmt();
+  const ok = s.status === "ok";
+  return (
+    <div className="rounded-xl bg-muted/50 p-3 text-xs" data-testid={`docs-live-${s.id}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold">{tk("src", `${s.id}.name`)}</span>
+        <span className="rounded-full bg-card px-2 py-0.5 font-semibold">{tk("srcStatus", s.status)}</span>
+        {s.stale ? <span className="rounded-full bg-destructive/10 px-2 py-0.5 font-semibold text-destructive">{t("docs.live.stale")}</span>
+          : ok && <span className="text-muted-foreground">{t("docs.live.fresh")}</span>}
+      </div>
+      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+        <div><dt className="text-muted-foreground">{t("docs.f.version")}</dt><dd lang="en" className="break-all font-semibold">{s.version ?? t("docs.live.noVersion")}</dd></div>
+        <div><dt className="text-muted-foreground">{t("docs.live.dataDate")}</dt><dd className="font-semibold">{s.dataDate ?? t("docs.live.unavailable")}</dd></div>
+        <div><dt className="text-muted-foreground">{t("docs.live.fetched")}</dt><dd className="font-semibold">{s.lastFetchedAt ? f.dateTime(s.lastFetchedAt) : t("docs.live.unavailable")}</dd></div>
+        <div><dt className="text-muted-foreground">{t("docs.live.records")}</dt><dd className="tnum font-semibold">{s.recordCount > 0 || ok ? f.num(s.recordCount) : t("docs.live.unavailable")}</dd></div>
+      </dl>
+      {s.error && <p className="mt-2 text-destructive">{t("docs.live.errorNote")}</p>}
+    </div>
+  );
+}
+
+function LiveAi({ a }: { a: AiStatus }) {
+  const { t } = useT();
+  const state = (configured: boolean, status: string) => status === "ok" ? t("sources.aiVerified") : !configured ? t("sources.aiNotConfigured") : t("sources.aiUnavailable");
+  return (
+    <div className="grid gap-2 rounded-xl bg-muted/50 p-3 text-xs sm:grid-cols-3" data-testid="docs-live-ai">
+      <div><div className="text-muted-foreground">{t("sources.aiConn")}</div><div className="font-semibold">{a.connected ? t("sources.aiReady") : a.mainConfigured ? t("sources.aiUnavailable") : t("sources.aiNotConfigured")}</div><div lang="en" className="text-muted-foreground">{a.provider}</div></div>
+      <div className="min-w-0"><div className="text-muted-foreground">{t("sources.mainModel")}</div><div lang="en" className="truncate font-semibold">{a.mainModel ?? "-"}</div><div>{state(!!a.mainConfigured, a.mainStatus)}</div></div>
+      <div className="min-w-0"><div className="text-muted-foreground">{t("sources.lightModel")}</div><div lang="en" className="truncate font-semibold">{a.lightModel ?? "-"}</div><div>{state(!!a.lightModel, a.lightStatus)}</div></div>
+    </div>
+  );
+}
+
+function DocItem({ d, live, ai }: { d: Doc; live: MarketSource[]; ai?: AiStatus }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const mine = live.filter((s) => d.sourceIds?.includes(s.id));
+  const body: ReactNode = (
+    <div className="space-y-3 border-t border-border px-4 pb-4 pt-3">
+      {(mine.length > 0 || (d.ai && ai)) && (
+        <section>
+          <h4 className="mb-1.5 text-xs font-bold">{t("docs.live.title")}</h4>
+          <div className="space-y-2">{d.ai && ai && <LiveAi a={ai} />}{mine.map((s) => <LiveSource key={s.id} s={s} />)}</div>
+          {d.types.includes("external") && <p className="mt-1.5 text-[11px] text-muted-foreground">{t("docs.live.notRealtime")}</p>}
+        </section>
+      )}
+      <dl className="grid gap-x-4 gap-y-2.5 text-sm md:grid-cols-[10rem_1fr]">
+        {d.rows.map((r, i) => (
+          <div key={i} className="contents">
+            <dt className="text-xs font-semibold text-muted-foreground md:pt-0.5">{t(r.label)}</dt>
+            <dd className="min-w-0 space-y-1 leading-relaxed">
+              {r.ref && <div lang="en" className="font-medium">{r.ref}</div>}
+              {r.k?.map((k) => <p key={k}>{t(k)}</p>)}
+              {r.url && <LinkOut url={r.url} />}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+  return (
+    <article className="rounded-2xl border border-card-border bg-card" data-testid={`doc-${d.id}`}>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left" data-testid={`button-doc-${d.id}`}>
+        <span className="min-w-0">
+          <span className="block font-semibold">{t(d.name)}</span>
+          <span className="mt-1 flex flex-wrap gap-1">{d.types.map((ty) => <TypeTag key={ty} type={ty} />)}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><span className="hidden sm:inline">{open ? t("docs.collapse") : t("docs.expand")}</span><ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} /></span>
+      </button>
+      {open && body}
+    </article>
+  );
+}
+
+export function SourceDocumentation({ sources, ai }: { sources: MarketSource[]; ai?: AiStatus }) {
+  const { t } = useT();
+  return (
+    <Panel className="mt-6" title={t("docs.title")} meta={t("docs.sub")}>
+      <dl className="mb-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-5" data-testid="docs-types">
+        {TYPES.map((ty) => <div key={ty} className="space-y-1"><dt><TypeTag type={ty} /></dt><dd className="text-muted-foreground">{t(`docs.typeDesc.${ty}` as DictKey)}</dd></div>)}
+      </dl>
+      <div className="space-y-2">{DOCS.map((d) => <DocItem key={d.id} d={d} live={sources} ai={ai} />)}</div>
+    </Panel>
+  );
+}

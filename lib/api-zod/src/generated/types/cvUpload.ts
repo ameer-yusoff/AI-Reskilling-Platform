@@ -5,8 +5,11 @@
  * Skilytics API
  * OpenAPI spec version: 0.1.0
  */
+import type { Lang } from './lang';
 
 export interface CvUpload {
+  consent: boolean;
+  lang?: Lang;
   fileName: string;
   contentBase64: string;
 }

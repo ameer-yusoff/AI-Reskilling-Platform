@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { roleTitle, useFmt } from "@/lib/fmt";
 import { useErrText, useT } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { SourceDocumentation, TechDiagnostics } from "./source-documentation";
 
 const MAROON = "#7A1523";
 const GOLD = "#C69214";
@@ -76,7 +77,7 @@ export function Market() {
         <Stat label={t("market.unemployment")} value={f.pct(o?.unemploymentRate)} tone="maroon" foot={`DOSM · ${o?.unemploymentDate ?? "-"}`} />
         <Stat label={t("market.participation")} value={f.pct(o?.participationRate)} foot={`DOSM · ${o?.unemploymentDate ?? "-"}`} />
         <Stat label={t("market.usageIndex")} value={o?.malaysiaUsageIndex != null ? `${o.malaysiaUsageIndex.toFixed(2)}x` : "-"} tone="gold" foot={`${t("market.usageIndexFoot")} · ${o?.aiUsagePeriod ?? "-"}`} />
-        <Stat label={t("market.sourcesOk")} value={`${o?.sourcesOk ?? 0}/${o?.sourcesTotal ?? 0}`} foot={`${t("common.checked")}: ${f.dateTime(o?.lastRefresh)}`} />
+        <Stat label={t("market.sourcesOk")} value={o ? `${o.sourcesOk}/${o.sourcesTotal}` : "—"} foot={`${t("common.checked")}: ${f.dateTime(o?.lastRefresh)}`} />
       </div>
       <p className="mt-3 text-xs text-muted-foreground">{t("market.cadence")}</p>
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
@@ -118,22 +119,20 @@ export function TvetMarket() {
   const ov = useGetMarketOverview({ query: { queryKey: getGetMarketOverviewQueryKey() } });
   const lab = useGetLabourTrend({ query: { queryKey: getGetLabourTrendQueryKey() } });
   const roles = useListRoles();
-  const [mycol, setMycol] = useState(false);
   const labour = lab.data ?? [];
-  const list = useMemo(() => [...(roles.data ?? [])].filter((r) => !mycol || r.myColCritical).sort((a, b) => Number(b.myColCritical) - Number(a.myColCritical) || (b.aiUsagePctMy ?? 0) - (a.aiUsagePctMy ?? 0)), [roles.data, mycol]);
+  const list = useMemo(() => [...(roles.data ?? [])].sort((a, b) => (b.aiUsagePctMy ?? 0) - (a.aiUsagePctMy ?? 0)), [roles.data]);
   return (
     <>
       <PageHeader eyebrow={t("nav.gradMarket")} title={t("tvetMarket.title")} sub={t("tvetMarket.sub")} />
       <Panel title={t("market.labourTitle")} meta={<DataStamp source="DOSM / OpenDOSM" period={labour[labour.length - 1]?.date} fetchedAt={ov.data?.lastRefresh} />}>
         {lab.isLoading ? <Rows n={5} /> : lab.isError ? <ErrorBox error={lab.error} retry={() => lab.refetch()} /> : !labour.length ? <Empty title={t("market.noData")} /> : <LabourChart data={labour} />}
       </Panel>
-      <Panel className="mt-4" title={t("tvetMarket.roles")} meta={<DataStamp source="Anthropic Economic Index · MyCOL" period={ov.data?.aiUsagePeriod} />}
-        actions={<Button variant={mycol ? "default" : "outline"} className="min-h-11" onClick={() => setMycol(!mycol)} data-testid="button-mycol">MyCOL</Button>}>
+      <Panel className="mt-4" title={t("tvetMarket.roles")} meta={<DataStamp source="Anthropic Economic Index" period={ov.data?.aiUsagePeriod} />}>
         {roles.isLoading ? <Rows n={6} /> : roles.isError ? <ErrorBox error={roles.error} retry={() => roles.refetch()} /> : !list.length ? <Empty title={t("roles.empty")} /> : (
           <ul className="divide-y divide-border">
             {list.map((r) => (
               <li key={r.id} className="grid gap-2 py-2.5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_7rem] md:items-center">
-                <div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><span title={roleTitle(r, lang)} className="truncate whitespace-nowrap text-sm font-semibold">{roleTitle(r, lang)}</span>{r.myColCritical && <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">MyCOL</span>}</div>
+                <div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><span title={roleTitle(r, lang)} className="truncate whitespace-nowrap text-sm font-semibold">{roleTitle(r, lang)}</span></div>
                   <div className="truncate whitespace-nowrap text-[11px] text-muted-foreground">{tk("sector", r.sector)}</div></div>
                 <div className="min-w-0 text-[11px]"><span className="text-muted-foreground">{t("matcher.exposure")}</span><Meter value={r.aiExposure} tone="slate" label={f.frac(r.aiExposure, 0)} /></div>
                 <div className="text-[11px] md:text-right"><span className="text-muted-foreground">{t("roles.usageMy")} </span><span className="tnum font-semibold">{f.pct(r.aiUsagePctMy, 2)}</span></div>
@@ -141,7 +140,7 @@ export function TvetMarket() {
             ))}
           </ul>
         )}
-        <ExplainNote>{t("roles.mycolExplain")}</ExplainNote>
+        <ExplainNote>{t("role.mycolUnverified")} {t("docs.live.notRealtime")}</ExplainNote>
       </Panel>
     </>
   );
@@ -197,11 +196,11 @@ export function Sources() {
         {ai.isLoading ? <Rows n={2} /> : ai.isError || !a ? <ErrorBox error={ai.error} retry={() => ai.refetch()} /> : (
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-muted/50 p-3"><div className="text-xs text-muted-foreground">{t("sources.aiConn")}</div><div className="mt-1 flex items-center gap-1.5 font-semibold">{a.connected ? <CheckCircle2 className="h-4 w-4 text-accent" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}{a.connected ? t("sources.aiReady") : a.mainConfigured ? t("sources.aiUnavailable") : t("sources.aiNotConfigured")}</div><div className="text-[11px] text-muted-foreground">{a.provider}</div></div>
-            <div className="min-w-0 rounded-xl bg-muted/50 p-3"><div className="text-xs text-muted-foreground">{t("sources.mainModel")}</div><div title={a.mainModel ?? ""} className="mt-1 truncate font-semibold">{a.mainModel ?? "-"}</div><div className="text-[11px] text-muted-foreground">{a.mainStatus === "ok" ? t("sources.aiVerified") : a.mainStatus === "error" ? a.mainError : t("sources.aiNotConfigured")}</div>{a.mainDetail && <div className="mt-1 text-[11px] text-muted-foreground">{a.mainDetail}</div>}</div>
-            <div className="min-w-0 rounded-xl bg-muted/50 p-3"><div className="text-xs text-muted-foreground">{t("sources.lightModel")}</div><div title={a.lightModel ?? ""} className="mt-1 truncate font-semibold">{a.lightModel ?? "-"}</div><div className="text-[11px] text-muted-foreground">{a.lightStatus === "ok" ? t("sources.aiVerified") : a.lightStatus === "error" ? a.lightError : t("sources.aiNotConfigured")}</div>{a.lightDetail && <div className="mt-1 text-[11px] text-muted-foreground">{a.lightDetail}</div>}</div>
+            <div className="min-w-0 rounded-xl bg-muted/50 p-3"><div className="text-xs text-muted-foreground">{t("sources.mainModel")}</div><div title={a.mainModel ?? ""} className="mt-1 truncate font-semibold">{a.mainModel ?? "-"}</div><div className="text-[11px] text-muted-foreground">{a.mainStatus === "ok" ? t("sources.aiVerified") : a.mainStatus === "error" ? t("sources.aiUnavailable") : t("sources.aiNotConfigured")}</div><TechDiagnostics text={a.mainError} testId="tech-ai-main" />{a.mainDetail && <div className="mt-1 text-[11px] text-muted-foreground">{a.mainDetail}</div>}</div>
+            <div className="min-w-0 rounded-xl bg-muted/50 p-3"><div className="text-xs text-muted-foreground">{t("sources.lightModel")}</div><div title={a.lightModel ?? ""} className="mt-1 truncate font-semibold">{a.lightModel ?? "-"}</div><div className="text-[11px] text-muted-foreground">{a.lightStatus === "ok" ? t("sources.aiVerified") : a.lightStatus === "error" ? t("sources.aiUnavailable") : t("sources.aiNotConfigured")}</div><TechDiagnostics text={a.lightError} testId="tech-ai-light" />{a.lightDetail && <div className="mt-1 text-[11px] text-muted-foreground">{a.lightDetail}</div>}</div>
           </div>
         )}
-        <p className="mt-3 text-xs text-muted-foreground">{t("sources.coldStart")}</p>
+        <p className="mt-3 text-xs text-muted-foreground">{t("sources.coldStart")} {t("docs.ai.cold")}</p>
       </Panel>
       {src.isLoading ? <Rows n={5} h="h-28" /> : src.isError ? <ErrorBox error={src.error} retry={() => src.refetch()} /> : !src.data?.length ? <Empty title={t("sources.empty")} /> : (
         <div className="space-y-6">
@@ -226,13 +225,15 @@ export function Sources() {
                           <StatusPill s={s.status} />
                         </div>
                         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-4">
-                          <div><dt className="text-muted-foreground">{t("common.dataPeriod")}</dt><dd className="font-semibold">{s.dataDate ?? "-"}</dd></div>
-                          <div><dt className="text-muted-foreground">{t("sources.lastFetched")}</dt><dd className="font-semibold">{f.dateTime(s.lastFetchedAt)}</dd></div>
-                          <div><dt className="text-muted-foreground">{t("sources.records")}</dt><dd className="tnum font-semibold">{f.num(s.recordCount)}</dd></div>
-                          <div className="min-w-0"><dt className="text-muted-foreground">{t("sources.detail")}</dt><dd title={s.detail ?? ""} className="truncate font-semibold">{s.detail ?? "-"}</dd></div>
+                          <div><dt className="text-muted-foreground">{t("common.dataPeriod")}</dt><dd className="font-semibold">{s.dataDate ?? t("docs.live.unavailable")}</dd></div>
+                          <div><dt className="text-muted-foreground">{t("sources.lastFetched")}</dt><dd className="font-semibold">{s.lastFetchedAt ? f.dateTime(s.lastFetchedAt) : t("docs.live.unavailable")}</dd></div>
+                          <div><dt className="text-muted-foreground">{t("sources.records")}</dt><dd className="tnum font-semibold">{s.recordCount > 0 || s.status === "ok" ? f.num(s.recordCount) : t("docs.live.unavailable")}</dd></div>
+                          <div className="min-w-0"><dt className="text-muted-foreground">{t("docs.f.version")}</dt><dd lang="en" title={s.version ?? ""} className="truncate font-semibold">{s.version ?? t("docs.live.noVersion")}</dd></div>
                         </dl>
                         <div className="mt-2 text-[11px] text-muted-foreground">{tk("cadence", s.refreshCadence)}</div>
-                        {s.error && <div className="mt-2 rounded-lg bg-destructive/5 p-2 text-[11px] text-destructive">{t("sources.lastError")}: {s.error}</div>}
+                        <TechDiagnostics text={s.detail} testId={`tech-detail-${s.id}`} />
+                        {s.stale && <div className="mt-2 rounded-lg bg-destructive/5 p-2 text-[11px] text-destructive" data-testid={`text-stale-${s.id}`}>{t("docs.live.stale")}</div>}
+                        {s.error && <div className="mt-2 rounded-lg bg-destructive/5 p-2 text-[11px] text-destructive">{t("docs.live.errorNote")}<TechDiagnostics text={s.error} testId={`tech-source-${s.id}`} /></div>}
                         {s.consumers.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-1">
                             <span className="mr-1 text-[11px] text-muted-foreground">{t("sources.usedBy")}:</span>
@@ -248,6 +249,7 @@ export function Sources() {
           })}
         </div>
       )}
+      <SourceDocumentation sources={src.data ?? []} ai={a} />
     </>
   );
 }

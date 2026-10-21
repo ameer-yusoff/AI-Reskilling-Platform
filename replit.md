@@ -29,15 +29,20 @@ AI reskilling/upskilling workbench for Malaysia: CV + RIASEC profiling, explaina
 
 ## Architecture decisions
 
-- GPU only for narratives (6 agents) and on-demand predictions; both cached by input hash. Scoring, matching, planning, charts are deterministic and run without GPU.
+- GPU for evidence-validated structured CV extraction, narratives (6 agents) and on-demand predictions, cached by content/input hash. Questionnaire scoring and role matching remain deterministic.
 - RunPod Serverless vLLM (OpenAI-compatible). Env: `RUNPOD_API_KEY`, `RUNPOD_LLM_ENDPOINT_ID`, optional `RUNPOD_LIGHT_ENDPOINT_ID`, `RUNPOD_LLM_MODEL`, `RUNPOD_LIGHT_MODEL`. Endpoint vars accept a bare ID or a pasted `https://api.runpod.ai/v2/<id>/run` URL. Missing config returns 503 `ai_not_connected`, never a fake answer. Cold start can take 3-5 min (server timeout 290 s -> `ai_timeout`).
 - Auth: own demo-grade login (scrypt hashes, HMAC-signed bearer token with `SESSION_SECRET`, stored in localStorage). Header-based, not cookies, because the preview runs in an iframe. Roles: individual / hr / tvet. HR and TVET only see profiles in their own organisation (forced server-side). Demo accounts `hr@skilytics.demo` and `tvet@skilytics.demo` (password `Demo@2026`) plus labelled "(Demo)" members are seeded at startup.
 - Guests: browser sends `X-Guest-Token` (random, localStorage). Guest profiles/predictions are tied to it, moved into the account on register/login, and purged after 7 days if unclaimed.
 - Language: EN (default) / BM / 中文 toggle. AI agents and predictions receive `lang` and answer in it; language is part of the cache hash. API errors are codes (e.g. `cv_required`) translated in the frontend.
-- Data Sources monitor (`/sources`): DOSM, AEI usage, AEI exposure, course-link check, RunPod main/light health (`/health`, no generation).
+- Data Sources (`/sources`): trilingual source documentation and status for DOSM, AEI, O*NET, unavailable course verification, RunPod, user/demo data and deterministic methods. Health probes do not generate text but may wake workers.
 - Market data: DOSM `lfs_month` (data.gov.my API) + Anthropic Economic Index (HF; latest `release_*` auto-detected, filtered to MYS/GLOBAL SOC rows; `labor_market_impacts/job_exposure.csv`). Ingested at startup if missing, re-checked every 6h, manual refresh endpoint. Never labelled real-time.
-- Match score weights: skills 40, transferable 15, interest 20, preferences 10, feasibility 15 (frontend meters assume these maxima). marketDemand = MyCOL flag + low AI exposure, separate from fit.
-- HRD Corp status is never "claimable_verified" unless confirmed; local paid training is "check_with_employer". CV files are not stored, only extracted text.
+- Match score weights: skills 40, transferable 15, interest 20, preferences 10, feasibility 15. Malaysian demand is null and MyCOL is explicitly unverified; AI exposure is not a demand proxy. No verified course means no fabricated course-duration estimate.
+- Public course feeds and new pathway creation are unavailable until provider prices, durations and HRD Corp attributes can be verified. Existing plans stay in the database, but unverified prices/items are withheld. Sample course rows are not public facts.
+- `/onboarding/:step?` is the standalone individual flow: status → CV → review → Holland → results → save. Legacy `/me?new=worker|graduate` routes redirect here. Draft input is session-scoped; saved answers, extraction evidence and progress belong to the scoped profile. Signup/login claims the same profile rows transactionally.
+- CV files (PDF/DOCX/TXT, 8 MB) are discarded. With explicit consent, extracted text is sent to RunPod and retained with quoted evidence for the profile; unclaimed guest work expires after seven days. CV retrieval is request/profile-local, never a shared user document index.
+- O*NET 31.0 supplies actual skill importance and occupation interests. The six-digit application SOC → `.00` crosswalk is exact, US-only and not a MASCO/MyCOL equivalence. Unmatched roles are withheld rather than using editorial seed weights. Original English reference titles and excerpts remain attributed.
+- Public organisation portal labels are **Employee** (`hr`) and **Educators** (`tvet`); internal role values and legacy URLs are preserved. Organisation scoping also checks the owning account's role, so a personal CV employer name cannot grant organisation access.
+- Repeatable individual demo signup uses fresh `@example.invalid` identities via the signup button and in-app walkthrough. No email is sent. Built-in organisation demo accounts retain their legacy email addresses and password for compatibility.
 
 ## Product
 

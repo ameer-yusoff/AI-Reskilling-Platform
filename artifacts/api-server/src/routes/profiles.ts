@@ -13,7 +13,8 @@ import {
 } from "@workspace/api-zod";
 import { loadCourses, loadRoles, loadSkills, roleToApi } from "../lib/catalog";
 import { extractCvText, extractSkills, CvError } from "../lib/cv";
-import { RIASEC_QUESTIONS, type RiasecType } from "../data/riasec";
+import { RIASEC_QUESTIONS } from "../data/riasec";
+import { scoreRiasec } from "../lib/riasec-scoring";
 import { scoreRole } from "../lib/scoring";
 import { buildPlan } from "../lib/planner";
 import { canAccessProfile, getLatestPlan, getProfileRow, planToApi, profileScope, profileToApi, type ProfileRow } from "../lib/profiles";
@@ -21,8 +22,10 @@ import { agentPrompt, agentTier, hashInput, SOURCE_AEI, type AgentName, type Lan
 import { chat, AiNotConnectedError, AiTimeoutError } from "../lib/llm";
 import { consumeAiRequest } from "../lib/ai-rate-limit";
 import { SDG_TARGETS } from "../data/courses";
+import { CvAiOutputError, cvExtractionKey, extractCvProfile, retrieveCv, retrieveReferences } from "../lib/cv-retrieval";
 
 const router: IRouter = Router();
+const cvRequests = new Map<number, Promise<unknown>>();
 
 router.get("/profiles", async (req, res) => {
   const q = ListProfilesQueryParams.parse(req.query);
@@ -64,7 +67,7 @@ router.post("/profiles", async (req, res) => {
 
 async function requireProfile(id: number, req: import("express").Request, res: import("express").Response): Promise<ProfileRow | null> {
   const p = await getProfileRow(id);
-  if (!p || !canAccessProfile(req, p)) {
+  if (!p || !await canAccessProfile(req, p)) {
     res.status(404).json({ error: "profile_not_found" });
     return null;
   }
@@ -83,6 +86,22 @@ router.patch("/profiles/:id", async (req, res) => {
   const body = UpdateProfileBody.parse(req.body);
   const p = await requireProfile(id, req, res);
   if (!p) return;
+  const step = body.onboardingStep;
+  if (body.verified && (!(body.name ?? p.name).trim() || !(body.goals ?? p.goals)?.trim())) {
+    res.status(400).json({ error: "invalid_input" }); return;
+  }
+  if ((body.verified || ["holland", "results", "save", "complete"].includes(step ?? "")) && !p.cvExtractionKey) {
+    res.status(400).json({ error: "cv_required" }); return;
+  }
+  if (["results", "save", "complete"].includes(step ?? "") && (!p.verified || !p.riasecScores)) {
+    res.status(400).json({ error: "riasec_required" }); return;
+  }
+  if (step === "complete" && (!req.user || req.user.role !== "individual" || p.ownerUserId !== req.user.id)) {
+    res.status(401).json({ error: "login_required" }); return;
+  }
+  if (body.riasecAnswers && (new Set(body.riasecAnswers.map((a) => a.questionId)).size !== body.riasecAnswers.length || body.riasecAnswers.some((a) => !RIASEC_QUESTIONS.some((q) => q.id === a.questionId)))) {
+    res.status(400).json({ error: "invalid_input" }); return;
+  }
   let skills: StoredProfileSkill[] = p.skills;
   if (body.removeSkillIds?.length) skills = skills.filter((s) => !body.removeSkillIds!.includes(s.skillId));
   for (const add of body.addSkills ?? []) {
@@ -93,9 +112,18 @@ router.patch("/profiles/:id", async (req, res) => {
   const { addSkills: _a, removeSkillIds: _r, organization: orgIn, ...rest } = body;
   const isOrg = req.user && (req.user.role === "hr" || req.user.role === "tvet");
   const organization = isOrg ? undefined : orgIn;
+  const canonicalAnswers = (answers: { questionId: number; value: number }[]) =>
+    JSON.stringify([...answers].sort((a, b) => a.questionId - b.questionId).map((a) => [a.questionId, a.value]));
+  const changedAnswers = body.riasecAnswers && canonicalAnswers(body.riasecAnswers) !== canonicalAnswers(p.riasecAnswers);
+  // Edited answers must not retain an old score; identical late autosaves are safe.
+  const invalidatedScores = changedAnswers
+    ? { riasecScores: null, riasecCode: null, ...(p.cvExtractionKey ? { onboardingStep: "holland" } : {}) }
+    : {};
+  // Editing source facts invalidates confirmation; explicit confirmation is applied last.
+  const factsChanged = ["name", "currentRole", "organization", "education", "experience"].some((k) => k in body && body[k as keyof typeof body] !== p[k as keyof ProfileRow]);
   const [row] = await db
     .update(profilesTable)
-    .set({ ...rest, ...(organization !== undefined ? { organization: organization.trim() || null } : {}), skills })
+    .set({ ...rest, ...invalidatedScores, ...(body.hrdcEligibilityStatus ? { hrdcEligible: body.hrdcEligibilityStatus === "yes" } : {}), ...(factsChanged ? { verified: body.verified === true } : {}), ...(organization !== undefined ? { organization: organization.trim() || null } : {}), skills })
     .where(eq(profilesTable.id, id))
     .returning();
   res.json(profileToApi(row, await loadSkills()));
@@ -114,29 +142,47 @@ router.post("/profiles/:id/cv", async (req, res) => {
   const body = UploadCvBody.parse(req.body);
   const p = await requireProfile(id, req, res);
   if (!p) return;
+  if (!body.consent) { res.status(400).json({ error: "cv_consent_required" }); return; }
   let text: string;
   try {
     text = await extractCvText(body.fileName, body.contentBase64);
   } catch (err) {
     if (err instanceof CvError) {
-      res.status(400).json({ error: "cv_unreadable", detail: err.message });
+      res.status(400).json({ error: err.message });
       return;
     }
-    req.log.error({ err }, "CV parse failed");
+    req.log.warn({ profileId: id }, "CV parse failed");
     res.status(400).json({ error: "cv_unreadable" });
     return;
   }
-  const allSkills = await loadSkills();
-  const extracted = extractSkills(text, allSkills);
-  // Keep manual (self_reported) skills; replace previous CV-derived ones.
-  const manual = p.skills.filter((s) => s.status === "self_reported" && !extracted.some((e) => e.skillId === s.skillId));
-  const [row] = await db
-    .update(profilesTable)
-    .set({ cvText: text, cvFileName: body.fileName, cvUploadedAt: new Date(), skills: [...extracted, ...manual] })
-    .where(eq(profilesTable.id, id))
-    .returning();
-  req.log.info({ profileId: id, skills: extracted.length }, "CV processed (file discarded)");
-  res.json(profileToApi(row, allSkills));
+  const lang = body.lang ?? "en";
+  const key = cvExtractionKey(text, lang);
+  if (p.cvExtractionKey === key) { res.json(profileToApi(p, await loadSkills())); return; }
+  if (cvRequests.has(id)) { res.status(409).json({ error: "cv_processing" }); return; }
+  const rate = consumeAiRequest(req.user ? "user" : "guest", req.user ? String(req.user.id) : req.guestToken!);
+  if (!rate.allowed) { res.setHeader("Retry-After", String(rate.retryAfterSeconds)); res.status(429).json({ error: "ai_rate_limited", retryAfterSeconds: rate.retryAfterSeconds }); return; }
+  const work = (async () => {
+    const result = await extractCvProfile(text, lang);
+    const allSkills = await loadSkills();
+    const extracted = extractSkills(text, allSkills);
+    const manual = p.skills.filter((s) => s.status === "self_reported" && !extracted.some((e) => e.skillId === s.skillId));
+    const isOrg = req.user?.role === "hr" || req.user?.role === "tvet";
+    const [row] = await db.update(profilesTable).set({
+      name: result.fields.name ?? "", currentRole: result.fields.currentRole,
+      ...(isOrg ? {} : { organization: result.fields.organization }),
+      education: result.fields.education, experience: result.fields.experience,
+      cvText: text, cvFileName: body.fileName, cvUploadedAt: new Date(),
+      cvEvidence: result.evidence, cvExtractionKey: key, verified: false, onboardingStep: "review",
+      skills: [...extracted, ...manual],
+    }).where(eq(profilesTable.id, id)).returning();
+    return profileToApi(row, allSkills);
+  })();
+  cvRequests.set(id, work);
+  try { res.json(await work); }
+  catch (err) {
+    req.log.warn({ profileId: id, kind: err instanceof AiNotConnectedError ? "not_configured" : "extraction_failed" }, "CV extraction failed");
+    res.status(err instanceof AiNotConnectedError ? 503 : 502).json({ error: err instanceof AiNotConnectedError ? "ai_not_connected" : err instanceof AiTimeoutError ? "ai_timeout" : err instanceof CvAiOutputError ? "cv_ai_invalid" : "ai_failed" });
+  } finally { cvRequests.delete(id); }
 });
 
 router.get("/riasec/questions", (_req, res) => {
@@ -148,22 +194,11 @@ router.post("/profiles/:id/riasec", async (req, res) => {
   const body = SubmitRiasecBody.parse(req.body);
   const p = await requireProfile(id, req, res);
   if (!p) return;
-  const sums: Record<RiasecType, number[]> = { R: [], I: [], A: [], S: [], E: [], C: [] };
-  for (const a of body.answers) {
-    const q = RIASEC_QUESTIONS.find((x) => x.id === a.questionId);
-    if (q) sums[q.type].push(a.value);
-  }
-  const answered = Object.values(sums).reduce((a, v) => a + v.length, 0);
-  if (answered < 18) {
-    res.status(400).json({ error: "riasec_incomplete" });
-    return;
-  }
-  const scores = Object.fromEntries(
-    (Object.keys(sums) as RiasecType[]).map((k) => [k, sums[k].length ? Math.round((sums[k].reduce((a, b) => a + b, 0) / sums[k].length) * 100) / 100 : 1]),
-  ) as Record<RiasecType, number>;
-  const order: RiasecType[] = ["R", "I", "A", "S", "E", "C"];
-  const code = [...order].sort((a, b) => scores[b] - scores[a] || order.indexOf(a) - order.indexOf(b)).slice(0, 3).join("");
-  const [row] = await db.update(profilesTable).set({ riasecScores: scores, riasecCode: code }).where(eq(profilesTable.id, id)).returning();
+  if (p.onboardingStep && !p.verified) { res.status(400).json({ error: "cv_review_required" }); return; }
+  let scores, code;
+  try { ({ scores, code } = scoreRiasec(body.answers)); }
+  catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : "invalid_input" }); return; }
+  const [row] = await db.update(profilesTable).set({ riasecScores: scores, riasecCode: code, riasecAnswers: body.answers }).where(eq(profilesTable.id, id)).returning();
   res.json(profileToApi(row, await loadSkills()));
 });
 
@@ -195,6 +230,7 @@ router.post("/profiles/:id/plan", async (req, res) => {
   const p = await requireProfile(id, req, res);
   if (!p) return;
   const [roles, skills, courses] = await Promise.all([loadRoles(), loadSkills(), loadCourses()]);
+  if (!courses.length) { res.status(503).json({ error: "course_catalogue_unavailable" }); return; }
   const role = roles.find((r) => r.id === roleId);
   if (!role) {
     res.status(404).json({ error: "role_not_found" });
@@ -268,7 +304,9 @@ router.post("/profiles/:id/insights", async (req, res) => {
       res.status(400).json({ error: "cv_required" });
       return;
     }
-    ctx["teksCv"] = p.cvText.slice(0, 12000);
+    ctx["teksCv"] = retrieveCv(p.cvText);
+    ctx["rujukanKemahiran"] = retrieveReferences(p.cvText);
+    ctx["buktiProfil"] = p.cvEvidence;
     ctx["kemahiranDikesan"] = profile.skills.map((s) => ({ nama: s.name, bukti: s.evidence }));
   }
   if (agent === "holland") {
@@ -277,6 +315,9 @@ router.post("/profiles/:id/insights", async (req, res) => {
       return;
     }
     ctx["riasec"] = { skor: p.riasecScores, kod: p.riasecCode };
+    ctx["jawapanSebenar"] = p.riasecAnswers;
+    ctx["profilDisahkan"] = p.verified;
+    ctx["buktiCv"] = p.cvEvidence;
     ctx["padananTeratas"] = top;
   }
   if (agent === "profiler" || agent === "fitter") {

@@ -33,7 +33,7 @@ export function riasecCongruence(scores: StoredRiasec, code: string): number {
 
 export function cheapestCourseHours(skillId: number, courses: CourseView[], budget: number): number {
   const options = courses.filter((c) => c.skills.some((s) => s.id === skillId) && c.costMyr <= Math.max(budget, 0));
-  if (options.length === 0) return 40;
+  if (options.length === 0) return Number.POSITIVE_INFINITY;
   return Math.min(...options.map((c) => c.durationHours));
 }
 
@@ -74,8 +74,9 @@ export function scoreRole(profile: ProfileForScoring, role: RoleView, skills: Sk
 
   // Market signal (separate from personal fit): MyCOL critical listing plus
   // resilience to AI task exposure.
-  const exposure = role.aiExposure ?? 0.3;
-  const marketDemand = Math.round((role.myColCritical ? 60 : 35) + 40 * (1 - Math.min(exposure, 1)));
+  // No verified Malaysian demand series or MyCOL crosswalk is configured.
+  // AI exposure is not labour demand, and missing exposure must never become 0.3.
+  const marketDemand = null;
 
   const breakdown = {
     skills: round1(skillsScore),
@@ -85,5 +86,5 @@ export function scoreRole(profile: ProfileForScoring, role: RoleView, skills: Sk
     feasibility: round1(feasibility),
   };
   const score = round1(Object.values(breakdown).reduce((a, b) => a + b, 0));
-  return { score, breakdown, matchedSkills: matched, gapSkills: gaps, marketDemand: Math.min(100, marketDemand) };
+  return { score, breakdown, matchedSkills: matched, gapSkills: gaps, marketDemand };
 }

@@ -34,6 +34,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", attachIdentity, router);
 
 const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+  if (err?.type === "entity.too.large") {
+    res.status(413).json({ error: "cv_too_large" });
+    return;
+  }
   if (err instanceof ZodError) {
     res.status(400).json({ error: "invalid_input", issues: err.issues });
     return;

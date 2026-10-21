@@ -5,9 +5,19 @@
  * Skilytics API
  * OpenAPI spec version: 0.1.0
  */
+import type { RoleMyColStatus } from './roleMyColStatus';
 import type { RoleSkill } from './roleSkill';
 
 export interface Role {
+  /** @nullable */
+  sourceUrl?: string | null;
+  /** @nullable */
+  sourceVersion?: string | null;
+  /** @nullable */
+  officialTitle?: string | null;
+  /** @nullable */
+  sourceFetchedAt?: string | null;
+  myColStatus?: RoleMyColStatus;
   id: number;
   socCode: string;
   title: string;

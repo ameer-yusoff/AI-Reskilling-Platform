@@ -5,11 +5,27 @@
  * Skilytics API
  * OpenAPI spec version: 0.1.0
  */
+import type { CvEvidence } from './cvEvidence';
+import type { InterestAnswer } from './interestAnswer';
+import type { ProfileHrdcEligibilityStatus } from './profileHrdcEligibilityStatus';
 import type { ProfileSkill } from './profileSkill';
 import type { RiasecScores } from './riasecScores';
 import type { Segment } from './segment';
 
 export interface Profile {
+  /** @nullable */
+  hrdcEligibilityStatus?: ProfileHrdcEligibilityStatus;
+  /** @nullable */
+  education?: string | null;
+  /** @nullable */
+  experience?: string | null;
+  /** @nullable */
+  cvExtractionKey?: string | null;
+  /** @nullable */
+  onboardingStep?: string | null;
+  verified?: boolean;
+  cvEvidence?: CvEvidence[];
+  riasecAnswers?: InterestAnswer[];
   id: number;
   name: string;
   segment: Segment;

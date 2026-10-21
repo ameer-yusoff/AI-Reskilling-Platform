@@ -11,14 +11,14 @@ const router: IRouter = Router();
 // HR and TVET users only ever see their own organisation.
 router.get("/cohort/organizations", requireRole("hr", "tvet"), async (req, res) => {
   const org = req.user!.organization!;
-  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(profilesTable).where(eq(profilesTable.organization, org));
+  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(profilesTable).where(profileScope(req));
   res.json([{ organization: org, count }]);
 });
 
 router.get("/cohort/summary", requireRole("hr", "tvet"), async (req, res) => {
   const org = req.user!.organization!;
   const [profiles, roles, skills, courses, plans] = await Promise.all([
-    db.select().from(profilesTable).where(eq(profilesTable.organization, org)),
+    db.select().from(profilesTable).where(profileScope(req)),
     loadRoles(),
     loadSkills(),
     loadCourses(),
