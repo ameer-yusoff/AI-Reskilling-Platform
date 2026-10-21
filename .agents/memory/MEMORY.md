@@ -1,1 +1,2 @@
 - [RunPod vLLM quirks](runpod-quirks.md) — served model id is lowercased (mismatch = HTML 502); cold start 3-5 min.
+- [Onboarding product rules](onboarding-product-rules.md) — CV-first wizard, Employee/Educators labels, dummy walkthroughs and sourced data in three languages.
